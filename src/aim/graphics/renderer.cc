@@ -1,6 +1,8 @@
 #include "renderer.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <vector>
