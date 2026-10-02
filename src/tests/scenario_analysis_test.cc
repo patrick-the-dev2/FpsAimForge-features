@@ -5,20 +5,24 @@
 namespace aim {
 namespace {
 
+ReplayEvent MakeClick(i64 time_micros, bool is_hit) {
+  ReplayEvent event;
+  event.type = ReplayEventType::MOUSE_CLICK;
+  event.time_micros = time_micros;
+  event.data.is_hit = is_hit;
+  return event;
+}
+
 TEST(ScenarioAnalysisTest, ReportsClickAccuracyAndMissStreak) {
   Replay replay;
   replay.scenario_name = "Test Scenario";
   replay.replay_fps = 100;
   replay.pitch_yaws.resize(100);
 
-  replay.events.push_back(
-      {.type = ReplayEventType::MOUSE_CLICK, .time_micros = 100000, .data = {.is_hit = true}});
-  replay.events.push_back(
-      {.type = ReplayEventType::MOUSE_CLICK, .time_micros = 300000, .data = {.is_hit = false}});
-  replay.events.push_back(
-      {.type = ReplayEventType::MOUSE_CLICK, .time_micros = 500000, .data = {.is_hit = false}});
-  replay.events.push_back(
-      {.type = ReplayEventType::MOUSE_CLICK, .time_micros = 700000, .data = {.is_hit = false}});
+  replay.events.push_back(MakeClick(100000, true));
+  replay.events.push_back(MakeClick(300000, false));
+  replay.events.push_back(MakeClick(500000, false));
+  replay.events.push_back(MakeClick(700000, false));
 
   ScenarioAnalysis analysis = AnalyzeScenarioReplay(replay);
 
