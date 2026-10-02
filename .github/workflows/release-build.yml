@@ -1,0 +1,45 @@
+name: Release Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ python3 curl
+
+      - name: Configure release build
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build FpsAimForge
+        run: cmake --build build --target FpsAimForge --parallel 2
+
+      - name: Run tests
+        run: |
+          cmake --build build --target FpsAimForgeTests --parallel 2
+          ctest --test-dir build --output-on-failure
+
+      - name: Package release binary
+        run: |
+          mkdir -p release
+          cp build/bin/FpsAimForge release/FpsAimForge
+          cp -r src/resources release/resources
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FpsAimForge-release
+          path: release/
+          if-no-files-found: error
