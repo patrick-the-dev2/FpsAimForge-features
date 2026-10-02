@@ -1,10 +1,12 @@
 #include "renderer.h"
 
 #include <cassert>
+#include <cstdint>
+#include <fstream>
+#include <vector>
 
 #include "SDL3/SDL.h"  // IWYU pragma: keep
 #include "SDL3/SDL_gpu.h"
-#include "SDL3_image/SDL_image.h"
 #include "aim/common/log.h"
 #include "aim/common/simple_types.h"
 #include "aim/graphics/draw_data.h"
@@ -19,6 +21,113 @@ namespace {
 constexpr const int kQuadNumVertices = 6;
 constexpr const float kMaxDistance = 1500.0f;
 constexpr const u32 kMaxSolidColorInstances = 1500;
+
+
+void AppendPngUint32(std::vector<std::uint8_t>& data, std::uint32_t value) {
+  data.push_back(static_cast<std::uint8_t>((value >> 24) & 0xffU));
+  data.push_back(static_cast<std::uint8_t>((value >> 16) & 0xffU));
+  data.push_back(static_cast<std::uint8_t>((value >> 8) & 0xffU));
+  data.push_back(static_cast<std::uint8_t>(value & 0xffU));
+}
+
+std::uint32_t PngCrc(const std::uint8_t* data, std::size_t size) {
+  std::uint32_t crc = 0xffffffffU;
+  for (std::size_t i = 0; i < size; ++i) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; ++bit) {
+      crc = (crc >> 1U) ^ (0xedb88320U & (0U - (crc & 1U)));
+    }
+  }
+  return ~crc;
+}
+
+std::uint32_t PngAdler32(const std::uint8_t* data, std::size_t size) {
+  constexpr std::uint32_t kMod = 65521U;
+  std::uint32_t a = 1U;
+  std::uint32_t b = 0U;
+  for (std::size_t i = 0; i < size; ++i) {
+    a = (a + data[i]) % kMod;
+    b = (b + a) % kMod;
+  }
+  return (b << 16U) | a;
+}
+
+void AppendPngChunk(std::vector<std::uint8_t>& png,
+                    const char type[4],
+                    const std::vector<std::uint8_t>& chunk_data) {
+  AppendPngUint32(png, static_cast<std::uint32_t>(chunk_data.size()));
+  const std::size_t type_offset = png.size();
+  png.insert(png.end(), type, type + 4);
+  png.insert(png.end(), chunk_data.begin(), chunk_data.end());
+  AppendPngUint32(png, PngCrc(png.data() + type_offset, 4 + chunk_data.size()));
+}
+
+bool SaveRgbaPng(const std::filesystem::path& path,
+                 const std::uint8_t* pixels,
+                 int width,
+                 int height,
+                 std::size_t pitch,
+                 bool bgra) {
+  if (pixels == nullptr || width <= 0 || height <= 0 || pitch < static_cast<std::size_t>(width) * 4U) {
+    return false;
+  }
+
+  std::vector<std::uint8_t> raw;
+  raw.reserve((static_cast<std::size_t>(width) * 4U + 1U) * static_cast<std::size_t>(height));
+  for (int y = 0; y < height; ++y) {
+    raw.push_back(0U);
+    const std::uint8_t* row = pixels + static_cast<std::size_t>(y) * pitch;
+    for (int x = 0; x < width; ++x) {
+      const std::uint8_t* pixel = row + static_cast<std::size_t>(x) * 4U;
+      raw.push_back(pixel[bgra ? 2 : 0]);
+      raw.push_back(pixel[1]);
+      raw.push_back(pixel[bgra ? 0 : 2]);
+      raw.push_back(pixel[3]);
+    }
+  }
+
+  std::vector<std::uint8_t> png = {0x89U, 0x50U, 0x4eU, 0x47U, 0x0dU, 0x0aU, 0x1aU, 0x0aU};
+
+  std::vector<std::uint8_t> ihdr;
+  AppendPngUint32(ihdr, static_cast<std::uint32_t>(width));
+  AppendPngUint32(ihdr, static_cast<std::uint32_t>(height));
+  ihdr.push_back(8U);
+  ihdr.push_back(6U);
+  ihdr.push_back(0U);
+  ihdr.push_back(0U);
+  ihdr.push_back(0U);
+  AppendPngChunk(png, "IHDR", ihdr);
+
+  std::vector<std::uint8_t> compressed;
+  compressed.reserve(raw.size() + raw.size() / 65535U * 5U + 16U);
+  compressed.push_back(0x78U);
+  compressed.push_back(0x01U);
+  std::size_t offset = 0;
+  while (offset < raw.size()) {
+    const std::size_t block_size = std::min<std::size_t>(65535U, raw.size() - offset);
+    const bool final_block = offset + block_size == raw.size();
+    compressed.push_back(final_block ? 1U : 0U);
+    const std::uint16_t length = static_cast<std::uint16_t>(block_size);
+    const std::uint16_t inverse_length = static_cast<std::uint16_t>(~length);
+    compressed.push_back(static_cast<std::uint8_t>(length & 0xffU));
+    compressed.push_back(static_cast<std::uint8_t>((length >> 8U) & 0xffU));
+    compressed.push_back(static_cast<std::uint8_t>(inverse_length & 0xffU));
+    compressed.push_back(static_cast<std::uint8_t>((inverse_length >> 8U) & 0xffU));
+    compressed.insert(compressed.end(), raw.begin() + static_cast<std::ptrdiff_t>(offset),
+                      raw.begin() + static_cast<std::ptrdiff_t>(offset + block_size));
+    offset += block_size;
+  }
+  AppendPngUint32(compressed, PngAdler32(raw.data(), raw.size()));
+  AppendPngChunk(png, "IDAT", compressed);
+  AppendPngChunk(png, "IEND", {});
+
+  std::ofstream output(path, std::ios::binary);
+  if (!output.is_open()) {
+    return false;
+  }
+  output.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+  return output.good();
+}
 
 SDL_GPUShader* LoadShader(SDL_GPUDevice* device,
                           const std::filesystem::path& shader_dir,
@@ -472,15 +581,12 @@ class RendererImpl : public Renderer {
       return false;
     }
 
-    SDL_Surface* surface = SDL_CreateSurfaceFrom(viewport_width_,
-                                                 viewport_height_,
-                                                 ctx->capture_pixel_format,
-                                                 pixels,
-                                                 ctx->capture_pitch);
-    bool saved = surface != nullptr && IMG_SaveJPG(surface, ctx->capture_path.string().c_str(), 70);
-    if (surface != nullptr) {
-      SDL_DestroySurface(surface);
-    }
+    const bool saved = SaveRgbaPng(ctx->capture_path,
+                                   static_cast<const std::uint8_t*>(pixels),
+                                   viewport_width_,
+                                   viewport_height_,
+                                   ctx->capture_pitch,
+                                   ctx->capture_pixel_format == SDL_PIXELFORMAT_BGRA32);
     SDL_UnmapGPUTransferBuffer(device_, ctx->capture_transfer);
     SDL_ReleaseGPUTransferBuffer(device_, ctx->capture_transfer);
     ctx->capture_transfer = nullptr;
