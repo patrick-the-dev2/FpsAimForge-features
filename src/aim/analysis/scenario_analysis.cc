@@ -133,7 +133,13 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
       !replay.target_metadata.empty()) {
     Camera camera(CameraParams(replay.room));
     size_t metadata_index = 0;
+    size_t event_index = 0;
     std::unordered_map<u16, u16> active_targets;
+    std::unordered_map<u16, ReplayTargetMetadata> metadata_by_id;
+    metadata_by_id.reserve(replay.target_metadata.size());
+    for (const auto& metadata : replay.target_metadata) {
+      metadata_by_id.emplace(metadata.target_id, metadata);
+    }
 
     for (size_t frame = 0; frame < replay.pitch_yaws.size(); ++frame) {
       const i64 frame_micros =
@@ -145,8 +151,9 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
         active_targets[metadata.target_id] = metadata.data_channel;
       }
 
-      for (const ReplayEvent& event : replay.events) {
-        if (event.time_micros > frame_micros) break;
+      while (event_index < replay.events.size() &&
+             replay.events[event_index].time_micros <= frame_micros) {
+        const ReplayEvent& event = replay.events[event_index++];
         if (event.type == ReplayEventType::REMOVE_TARGET) {
           active_targets.erase(event.data.target_id);
         }
@@ -157,13 +164,11 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
 
       float nearest_error = std::numeric_limits<float>::max();
       for (const auto& [target_id, channel] : active_targets) {
-        const auto metadata_it = std::find_if(
-            replay.target_metadata.begin(), replay.target_metadata.end(),
-            [target_id](const ReplayTargetMetadata& m) { return m.target_id == target_id; });
-        if (metadata_it == replay.target_metadata.end()) continue;
+        auto metadata_it = metadata_by_id.find(target_id);
+        if (metadata_it == metadata_by_id.end()) continue;
 
-        glm::vec3 position = metadata_it->initial_data.position;
-        float radius = metadata_it->initial_data.radius;
+        glm::vec3 position = metadata_it->second.initial_data.position;
+        float radius = metadata_it->second.initial_data.radius;
         if (!replay.target_data.empty()) {
           const i64 index = static_cast<i64>(frame) * replay.num_targets + channel;
           if (index >= 0 && index < static_cast<i64>(replay.target_data.size()) &&
@@ -176,7 +181,6 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
         auto miss_distance = GetNormalizedMissedShotDistance(
             camera.GetPosition(), look_at.front, position);
         if (miss_distance) {
-          // This turns the existing normalized miss metric into a readable approximation.
           nearest_error = std::min(
               nearest_error,
               ToDegrees(std::atan(*miss_distance * std::max(radius, 0.001f))));
@@ -186,14 +190,6 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
         tracking_errors.push_back(nearest_error);
       }
     }
-  }
-
-  if (!tracking_errors.empty()) {
-    result.average_tracking_error =
-        std::accumulate(tracking_errors.begin(), tracking_errors.end(), 0.0f) /
-        tracking_errors.size();
-    result.worst_tracking_error =
-        *std::max_element(tracking_errors.begin(), tracking_errors.end());
   }
 
   if (result.misses > 0) {
