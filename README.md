@@ -80,3 +80,10 @@ The NIM request runs asynchronously so the replay/stats UI remains responsive. I
 ### Release build
 
 GitHub Actions now builds the release target, runs the existing test suite, and uploads a \`FpsAimForge-release\` artifact on pushes to \`main\` or manual workflow dispatch.
+
+
+### Full visual replay AI review
+
+The AI reviewer can now render the complete recorded scenario at 0.5-second intervals, capture the replay visuals as temporary JPEG frames, and send the chronological frame sequence plus deterministic replay telemetry to NVIDIA NIM. Visual capture happens only when the user starts **Watch Full Scenario with AI**, not during normal gameplay. Temporary frames are deleted after the NIM request completes.
+
+The default visual model is `deepseek-ai/deepseek-v4.1-flash`, which supports image input. Override it with `NVIDIA_NIM_VISION_MODEL` when needed.
