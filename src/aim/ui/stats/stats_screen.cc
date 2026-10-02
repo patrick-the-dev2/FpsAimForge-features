@@ -776,15 +776,31 @@ class StatsScreen : public UiScreen {
 
     ImGui::Spacing();
     ImGui::Text("AI Overview");
-    if (!nim_state_) {
+    if (!visual_capture_state_ && !nim_state_) {
       if (IsNimConfigured()) {
-        if (ImGui::Button("Generate AI Overview")) {
-          nim_state_ = StartNimAnalysis(BuildNimAnalysisPrompt(*analysis_));
+        if (ImGui::Button("Watch Full Scenario with AI")) {
+          visual_capture_state_ = std::make_shared<VisualReplayCaptureState>();
+          visual_capture_state_->prompt = BuildNimAnalysisPrompt(*analysis_);
+          PushNextScreen(
+              CreateReplayViewerScreen(replay_, &app_, visual_capture_state_));
         }
       } else {
         ImGui::TextWrapped(
             "NVIDIA NIM is optional. Set NVIDIA_NIM_API_KEY to enable AI coaching. "
-            "NVIDIA_NIM_MODEL and NVIDIA_NIM_ENDPOINT can override the defaults.");
+            "The visual reviewer uses NVIDIA_NIM_VISION_MODEL, defaulting to "
+            "deepseek-ai/deepseek-v4.1-flash.");
+      }
+    }
+
+    if (visual_capture_state_) {
+      std::lock_guard capture_lock(visual_capture_state_->mutex);
+      if (visual_capture_state_->active) {
+        ImGui::Text("Capturing the full replay for visual analysis...");
+        ImGui::ProgressBar(visual_capture_state_->progress, ImVec2(-1, 0));
+      } else if (!visual_capture_state_->error.empty()) {
+        ImGui::TextWrapped("Replay capture failed: %s", visual_capture_state_->error.c_str());
+      } else if (visual_capture_state_->nim_state) {
+        nim_state_ = visual_capture_state_->nim_state;
       }
     }
 
@@ -971,6 +987,7 @@ class StatsScreen : public UiScreen {
   std::optional<ScoresOverTime> scores_over_time_;
   std::optional<ScenarioAnalysis> analysis_;
   std::shared_ptr<NimAnalysisState> nim_state_;
+  std::shared_ptr<VisualReplayCaptureState> visual_capture_state_;
   float score_target_ = 0;
   bool delay_display_;
   std::unique_ptr<TopBar> top_bar_ = CreateTopBar();
