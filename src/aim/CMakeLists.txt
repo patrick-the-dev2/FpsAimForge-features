@@ -226,6 +226,8 @@ set(SRCS
 
 add_library(${NAME} ${SRCS})
 
+add_subdirectory(analysis)
+
 target_link_libraries(
     ${NAME}
     PUBLIC
