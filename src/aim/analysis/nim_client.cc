@@ -7,10 +7,10 @@
 #include <format>
 #include <fstream>
 #include <iterator>
-#include <vector>
 #include <string>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 namespace aim {
 namespace {
@@ -45,7 +45,7 @@ std::string JsonEscape(const std::string& value) {
 std::string CurlConfigEscape(const std::string& value) {
   std::string result;
   for (char c : value) {
-    if (c == '\\' || c == '\"') result += '\\';
+    if (c == '\\' || c == '"') result += '\\';
     result += c;
   }
   return result;
@@ -58,7 +58,7 @@ std::string ExtractJsonString(const std::string& json, const std::string& key) {
 
   size_t colon = json.find(':', key_pos + needle.size());
   if (colon == std::string::npos) return "";
-  size_t start = json.find('\"', colon + 1);
+  size_t start = json.find('"', colon + 1);
   if (start == std::string::npos) return "";
 
   std::string result;
@@ -70,7 +70,7 @@ std::string ExtractJsonString(const std::string& json, const std::string& key) {
         case 'n': result += '\n'; break;
         case 'r': result += '\r'; break;
         case 't': result += '\t'; break;
-        case '\"': result += '\"'; break;
+        case '"': result += '"'; break;
         case '\\': result += '\\'; break;
         case '/': result += '/'; break;
         default: result += c; break;
@@ -78,7 +78,7 @@ std::string ExtractJsonString(const std::string& json, const std::string& key) {
       escaped = false;
     } else if (c == '\\') {
       escaped = true;
-    } else if (c == '\"') {
+    } else if (c == '"') {
       return result;
     } else {
       result += c;
@@ -185,8 +185,10 @@ std::string Base64Encode(const std::string& input) {
   output.reserve(((input.size() + 2) / 3) * 4);
   for (size_t i = 0; i < input.size(); i += 3) {
     const unsigned int a = static_cast<unsigned char>(input[i]);
-    const unsigned int b = i + 1 < input.size() ? static_cast<unsigned char>(input[i + 1]) : 0;
-    const unsigned int d = i + 2 < input.size() ? static_cast<unsigned char>(input[i + 2]) : 0;
+    const unsigned int b =
+        i + 1 < input.size() ? static_cast<unsigned char>(input[i + 1]) : 0;
+    const unsigned int d =
+        i + 2 < input.size() ? static_cast<unsigned char>(input[i + 2]) : 0;
     const unsigned int value = (a << 16) | (b << 8) | d;
     output.push_back(kTable[(value >> 18) & 63]);
     output.push_back(kTable[(value >> 12) & 63]);
@@ -234,20 +236,22 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
                  "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\""
               << JsonEscape(prompt + "\n\nVisual replay: chronological frames sampled every 0.5 seconds.")
               << "\"}";
-    }
 
-    for (const auto& image_path : image_paths) {
-      std::ifstream input(image_path, std::ios::binary);
-      if (!input) {
-        continue;
+      for (const auto& image_path : image_paths) {
+        std::ifstream input(image_path, std::ios::binary);
+        if (!input) {
+          continue;
+        }
+        std::string bytes(
+            std::istreambuf_iterator<char>(input),
+            std::istreambuf_iterator<char>());
+        const std::string encoded = Base64Encode(bytes);
+        payload << ",{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,"
+                << encoded << "\",\"detail\":\"low\"}}";
       }
-      std::string bytes((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-      const std::string encoded = Base64Encode(bytes);
-      payload << ",{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/jpeg;base64,"
-              << encoded << "\",\"detail\":\"low\"}}";
-    }
 
-    payload << "]}],\"max_tokens\":1800,\"temperature\":0.2,\"stream\":false}";
+      payload << "]}],\"max_tokens\":1800,\"temperature\":0.2,\"stream\":false}";
+    }
 
     {
       std::ofstream config(config_path);
