@@ -27,6 +27,9 @@ struct RenderContext {
   SDL_GPURenderPass* render_pass = nullptr;
   const Stopwatch* stopwatch = nullptr;
   FrameTimes* times = nullptr;
+  bool capture_frame = false;
+  std::filesystem::path capture_path;
+  std::string capture_error;
 
  private:
   Stopwatch default_stopwatch_;
