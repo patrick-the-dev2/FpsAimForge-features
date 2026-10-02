@@ -47,7 +47,15 @@ SimpleBackupActions GetSimpleBackupActions(const std::vector<std::string>& exist
 
   absl::c_sort(existing_dates, &SortDates);
 
-  int most_recent_backup = existing_dates.back().date_num;
+  // existing_backups was checked above, but keep this guard explicit so strict GCC
+  // diagnostics cannot treat the vector as potentially empty after sorting.
+  if (existing_dates.empty()) {
+    SimpleBackupActions actions;
+    actions.make_new_backup = true;
+    return actions;
+  }
+
+  int most_recent_backup = existing_dates[existing_dates.size() - 1].date_num;
   int most_recent_backup_age = now - most_recent_backup;
 
   if (most_recent_backup_age < options.backup_every_n_days) {
