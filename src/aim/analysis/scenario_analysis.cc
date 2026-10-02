@@ -182,9 +182,12 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
         auto miss_distance = GetNormalizedMissedShotDistance(
             camera.GetPosition(), look_at.front, position);
         if (miss_distance) {
-          nearest_error = std::min(
-              nearest_error,
-              ToDegrees(std::atan(*miss_distance * std::max(radius, 0.001f))));
+          // The existing metric is a normalized plane distance, so atan(error)
+          // gives the angular miss approximation directly. Target radius is
+          // intentionally not mixed into this conversion.
+          (void)radius;
+          nearest_error =
+              std::min(nearest_error, ToDegrees(std::atan(*miss_distance)));
         }
       }
       if (nearest_error < std::numeric_limits<float>::max()) {
