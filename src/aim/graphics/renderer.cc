@@ -400,92 +400,93 @@ class RendererImpl : public Renderer {
     return true;
   }
 
-  bool CaptureFrame(SDL_GPUTexture* texture, const std::filesystem::path& path) {
-    if (texture == nullptr || path.empty()) {
+  bool QueueFrameCapture(RenderContext* ctx) {
+    if (ctx->swapchain_texture == nullptr || ctx->capture_path.empty()) {
       return false;
     }
 
     const SDL_GPUTextureFormat gpu_format = SDL_GetGPUSwapchainTextureFormat(device_, sdl_window_);
-    SDL_PixelFormat pixel_format = SDL_PIXELFORMAT_UNKNOWN;
     switch (gpu_format) {
       case SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM:
       case SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB:
-        pixel_format = SDL_PIXELFORMAT_RGBA32;
+        ctx->capture_pixel_format = SDL_PIXELFORMAT_RGBA32;
         break;
       case SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM:
       case SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM_SRGB:
-        pixel_format = SDL_PIXELFORMAT_BGRA32;
+        ctx->capture_pixel_format = SDL_PIXELFORMAT_BGRA32;
         break;
       default:
+        ctx->capture_error = "Unsupported GPU swapchain format for replay capture.";
         return false;
     }
 
     const Uint32 width = static_cast<Uint32>(viewport_width_);
     const Uint32 height = static_cast<Uint32>(viewport_height_);
-    const Uint32 pitch = width * 4;
+    ctx->capture_pitch = width * 4;
 
     SDL_GPUTransferBufferCreateInfo transfer_info{};
     transfer_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
-    transfer_info.size = pitch * height;
-    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device_, &transfer_info);
-    if (transfer == nullptr) {
+    transfer_info.size = ctx->capture_pitch * height;
+    ctx->capture_transfer = SDL_CreateGPUTransferBuffer(device_, &transfer_info);
+    if (ctx->capture_transfer == nullptr) {
+      ctx->capture_error = SDL_GetError();
       return false;
     }
 
-    SDL_GPUCommandBuffer* command_buffer = SDL_AcquireGPUCommandBuffer(device_);
-    if (command_buffer == nullptr) {
-      SDL_ReleaseGPUTransferBuffer(device_, transfer);
-      return false;
-    }
-
-    SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(command_buffer);
+    SDL_GPUCopyPass* copy_pass = SDL_BeginGPUCopyPass(ctx->command_buffer);
     SDL_GPUTextureRegion source{};
-    source.texture = texture;
+    source.texture = ctx->swapchain_texture;
     source.mip_level = 0;
     source.layer = 0;
-    source.x = 0;
-    source.y = 0;
-    source.z = 0;
     source.w = width;
     source.h = height;
     source.d = 1;
 
     SDL_GPUTextureTransferInfo destination{};
-    destination.transfer_buffer = transfer;
+    destination.transfer_buffer = ctx->capture_transfer;
     destination.offset = 0;
     destination.pixels_per_row = width;
     destination.rows_per_layer = height;
     SDL_DownloadFromGPUTexture(copy_pass, &source, &destination);
     SDL_EndGPUCopyPass(copy_pass);
+    return true;
+  }
 
-    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(command_buffer);
-    if (fence == nullptr) {
-      SDL_ReleaseGPUTransferBuffer(device_, transfer);
+  bool FinalizeFrameCapture(RenderContext* ctx, SDL_GPUFence* fence) {
+    if (ctx->capture_transfer == nullptr) {
       return false;
     }
 
     SDL_GPUFence* fences[] = {fence};
-    const bool waited = SDL_WaitForGPUFences(device_, true, fences, 1);
-    SDL_ReleaseGPUFence(device_, fence);
-    if (!waited) {
-      SDL_ReleaseGPUTransferBuffer(device_, transfer);
+    if (!SDL_WaitForGPUFences(device_, true, fences, 1)) {
+      SDL_ReleaseGPUTransferBuffer(device_, ctx->capture_transfer);
+      ctx->capture_transfer = nullptr;
       return false;
     }
 
-    void* pixels = SDL_MapGPUTransferBuffer(device_, transfer, false);
+    void* pixels = SDL_MapGPUTransferBuffer(device_, ctx->capture_transfer, false);
     if (pixels == nullptr) {
-      SDL_ReleaseGPUTransferBuffer(device_, transfer);
+      ctx->capture_error = SDL_GetError();
+      SDL_ReleaseGPUTransferBuffer(device_, ctx->capture_transfer);
+      ctx->capture_transfer = nullptr;
       return false;
     }
 
-    SDL_Surface* surface = SDL_CreateSurfaceFrom(
-        static_cast<int>(width), static_cast<int>(height), pixel_format, pixels, pitch);
-    bool saved = surface != nullptr && IMG_SavePNG(surface, path.string().c_str());
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(viewport_width_,
+                                                 viewport_height_,
+                                                 ctx->capture_pixel_format,
+                                                 pixels,
+                                                 ctx->capture_pitch);
+    bool saved = surface != nullptr && IMG_SavePNG(surface, ctx->capture_path.string().c_str());
     if (surface != nullptr) {
       SDL_DestroySurface(surface);
     }
-    SDL_UnmapGPUTransferBuffer(device_, transfer);
-    SDL_ReleaseGPUTransferBuffer(device_, transfer);
+    SDL_UnmapGPUTransferBuffer(device_, ctx->capture_transfer);
+    SDL_ReleaseGPUTransferBuffer(device_, ctx->capture_transfer);
+    ctx->capture_transfer = nullptr;
+    if (!saved && ctx->capture_error.empty()) {
+      ctx->capture_error = SDL_GetError();
+    }
     return saved;
   }
 
@@ -521,12 +522,26 @@ class RendererImpl : public Renderer {
 
     ctx->times->finish_render_submit_command_buffer = ctx->stopwatch->GetElapsedMicros();
     if (ctx->capture_frame) {
-      if (!CaptureFrame(ctx->swapchain_texture, ctx->capture_path)) {
-        ctx->capture_error = SDL_GetError();
+      if (!QueueFrameCapture(ctx)) {
+        ctx->capture_frame = false;
       }
-      ctx->capture_frame = false;
     }
-    SDL_SubmitGPUCommandBuffer(ctx->command_buffer);
+
+    SDL_GPUFence* fence = nullptr;
+    if (ctx->capture_transfer != nullptr) {
+      fence = SDL_SubmitGPUCommandBufferAndAcquireFence(ctx->command_buffer);
+      if (fence == nullptr) {
+        ctx->capture_error = SDL_GetError();
+        SDL_ReleaseGPUTransferBuffer(device_, ctx->capture_transfer);
+        ctx->capture_transfer = nullptr;
+      } else {
+        FinalizeFrameCapture(ctx, fence);
+        SDL_ReleaseGPUFence(device_, fence);
+      }
+    } else {
+      SDL_SubmitGPUCommandBuffer(ctx->command_buffer);
+    }
+    ctx->capture_frame = false;
 
     ctx->times->finish_render.end = ctx->stopwatch->GetElapsedMicros();
   }
