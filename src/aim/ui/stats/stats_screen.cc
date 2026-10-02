@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <mutex>
 #include <optional>
 
 #include "absl/cleanup/cleanup.h"
