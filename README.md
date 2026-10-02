@@ -61,3 +61,22 @@ cmake --build build --target FpsAimForgeTests
 cd build
 ctest
 ```
+
+
+## Scenario analysis and AI coaching
+
+Completed runs can now be opened from the stats screen with **Detailed Analysis**. The analysis is built from the existing replay capture and reports accuracy, miss streaks, click pacing, mouse movement speed, direction reversals, and target-tracking error when target snapshots are available.
+
+- **Detailed Analysis**: deterministic replay-derived diagnostics.
+- **Weak Points**: concrete findings with replay timestamps when available.
+- **Replay Review**: opens the existing replay viewer for the same run.
+- **Watch replay**: jumps directly into replay playback.
+- **AI Overview**: optional NVIDIA NIM coaching based on the measured analysis.
+
+To enable NVIDIA NIM hosted analysis, set \`NVIDIA_NIM_API_KEY\`. Optional environment variables are \`NVIDIA_NIM_MODEL\` and \`NVIDIA_NIM_ENDPOINT\`. The default endpoint is NVIDIA's OpenAI-compatible \`/v1/chat/completions\` endpoint and the default model is \`deepseek-ai/deepseek-v4-flash\`.
+
+The NIM request runs asynchronously so the replay/stats UI remains responsive. If NIM is not configured or unavailable, deterministic analysis remains fully local and usable.
+
+### Release build
+
+GitHub Actions now builds the release target, runs the existing test suite, and uploads a \`FpsAimForge-release\` artifact on pushes to \`main\` or manual workflow dispatch.
