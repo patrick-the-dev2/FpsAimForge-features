@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
-#include <iterator>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -40,6 +39,23 @@ std::string JsonEscape(const std::string& value) {
     }
   }
   return result;
+}
+
+std::string ReadBinaryFile(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) return {};
+
+  input.seekg(0, std::ios::end);
+  const std::streampos size = input.tellg();
+  if (size < 0) return {};
+
+  std::string content(static_cast<std::size_t>(size), '\0');
+  input.seekg(0, std::ios::beg);
+  input.read(content.data(), static_cast<std::streamsize>(content.size()));
+  if (!input && !input.eof()) return {};
+
+  content.resize(static_cast<std::size_t>(input.gcount()));
+  return content;
 }
 
 std::string CurlConfigEscape(const std::string& value) {
@@ -151,8 +167,7 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
 
     std::string response;
     if (exit_code == 0) {
-      std::ifstream input(response_path);
-      response.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+      response = ReadBinaryFile(response_path);
     }
 
     std::filesystem::remove(payload_path, ec);
@@ -242,9 +257,18 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
         if (!input) {
           continue;
         }
-        std::string bytes{
-            std::istreambuf_iterator<char>(input),
-            std::istreambuf_iterator<char>()};
+        input.seekg(0, std::ios::end);
+        const std::streampos size = input.tellg();
+        if (size < 0) {
+          continue;
+        }
+        std::string bytes(static_cast<std::size_t>(size), '\0');
+        input.seekg(0, std::ios::beg);
+        input.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        if (!input && !input.eof()) {
+          continue;
+        }
+        bytes.resize(static_cast<std::size_t>(input.gcount()));
         const std::string encoded = Base64Encode(bytes);
         payload << ",{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,"
                 << encoded << "\",\"detail\":\"low\"}}";
