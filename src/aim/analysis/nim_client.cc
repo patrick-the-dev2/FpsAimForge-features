@@ -95,9 +95,9 @@ bool IsNimConfigured() {
 }
 
 std::string GetNimConfigurationHint() {
-  return "Set NVIDIA_NIM_API_KEY and optionally NVIDIA_NIM_MODEL or "
-         "NVIDIA_NIM_ENDPOINT. The integration uses NVIDIA's OpenAI-compatible "
-         "NIM chat completion endpoint.";
+  return "Set NVIDIA_NIM_API_KEY for NVIDIA's hosted endpoint, or set "
+         "NVIDIA_NIM_ENDPOINT for a self-hosted NIM. NVIDIA_NIM_MODEL can "
+         "override the model identifier.";
 }
 
 std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
@@ -111,13 +111,6 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
                                              : kDefaultEndpoint;
   const std::string model =
       !GetEnv("NVIDIA_NIM_MODEL").empty() ? GetEnv("NVIDIA_NIM_MODEL") : kDefaultModel;
-
-  if (api_key.empty()) {
-    std::lock_guard lock(state->mutex);
-    state->done = true;
-    state->error = GetNimConfigurationHint();
-    return state;
-  }
 
   std::thread([state, prompt, api_key, endpoint, model]() {
     const auto id = g_request_counter.fetch_add(1);
@@ -143,7 +136,9 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
       config << "request = \"POST\"\n";
       config << "header = \"Accept: application/json\"\n";
       config << "header = \"Content-Type: application/json\"\n";
-      config << "header = \"Authorization: Bearer " << CurlConfigEscape(api_key) << "\"\n";
+      if (!api_key.empty()) {
+        config << "header = \"Authorization: Bearer " << CurlConfigEscape(api_key) << "\"\n";
+      }
       config << "data-binary = \"@" << CurlConfigEscape(payload_path) << "\"\n";
       config << "output = \"" << CurlConfigEscape(response_path) << "\"\n";
     }
