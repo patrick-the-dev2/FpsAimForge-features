@@ -24,7 +24,7 @@ std::optional<std::string> ReadFileContentAsString(const std::filesystem::path& 
   if (size < 0) {
     return {};
   }
-  std::string content(static_cast<std::size_t>(size), '\\0');
+  std::string content(static_cast<std::size_t>(size), '\0');
   file.seekg(0, std::ios::beg);
   file.read(content.data(), static_cast<std::streamsize>(content.size()));
   if (!file && !file.eof()) {
