@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "aim/common/times.h"
