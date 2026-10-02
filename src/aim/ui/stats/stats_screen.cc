@@ -13,6 +13,8 @@
 #include "aim/common/proto_util.h"
 #include "aim/common/simple_types.h"
 #include "aim/common/util.h"
+#include "aim/analysis/nim_client.h"
+#include "aim/analysis/scenario_analysis.h"
 #include "aim/core/perf.h"
 #include "aim/core/replay_manager.h"
 #include "aim/core/scenario_manager.h"
@@ -142,6 +144,7 @@ enum class SelectedScreen : int {
   STATS = 1,
   HISTORY = 2,
   PERF = 3,
+  ANALYSIS = 4,
 };
 
 struct HistoryRow {
@@ -296,12 +299,21 @@ class StatsScreen : public UiScreen {
           DrawStatsPanel();
         }
         if (selected_screen_ == SelectedScreen::PERF) {
-          if (performance_stats_) {
+          if (replay_) {
+      if (ImGui::Selectable(std::format("{} Detailed Analysis", icons::kSmartToy).c_str(),
+                            selected_screen_ == SelectedScreen::ANALYSIS)) {
+        selected_screen_ = SelectedScreen::ANALYSIS;
+      }
+    }
+    if (performance_stats_) {
             DrawPerformanceStats(*performance_stats_);
           }
         }
         if (selected_screen_ == SelectedScreen::HISTORY) {
           DrawHistoryPanel();
+        }
+        if (selected_screen_ == SelectedScreen::ANALYSIS) {
+          DrawAnalysisPanel();
         }
       }
       ImGui::EndChild();
@@ -322,8 +334,9 @@ class StatsScreen : public UiScreen {
                           selected_screen_ == SelectedScreen::HISTORY)) {
       selected_screen_ = SelectedScreen::HISTORY;
     }
-    if (replay_ && ImGui::Selectable(std::format("{} Replay", icons::kLiveTv).c_str(), false)) {
-      PushNextScreen(CreateReplayViewerScreen(replay_, &app_));
+    if (replay_ && ImGui::Selectable(std::format("{} Replay Review", icons::kLiveTv).c_str(),
+                                      selected_screen_ == SelectedScreen::ANALYSIS)) {
+      selected_screen_ = SelectedScreen::ANALYSIS;
     }
     if (performance_stats_) {
       std::string label = std::format("{} Perf", icons::kSmartToy);
@@ -694,6 +707,100 @@ class StatsScreen : public UiScreen {
     ImGui::TextFmt("{}/{}", progress.runs_done, progress.item.num_plays());
   }
 
+  void DrawAnalysisPanel() {
+    if (!replay_) {
+      ImGui::TextWrapped("No replay data was captured for this run.");
+      return;
+    }
+
+    if (!analysis_) {
+      analysis_ = AnalyzeScenarioReplay(*replay_);
+    }
+
+    ImGui::BeginChild("ScenarioAnalysisPanel", ImVec2(0, 0));
+
+    ImGui::Text("Scenario analysis");
+    ImGui::SameLine();
+    if (ImGui::Button("Watch replay")) {
+      PushNextScreen(CreateReplayViewerScreen(replay_, &app_));
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Detailed Analysis");
+    ImGui::TextWrapped(analysis_->deterministic_summary);
+
+    ImGui::Spacing();
+    if (ImGui::BeginTable("AnalysisOverview", 4,
+                          ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV)) {
+      ImGui::TableSetupColumn("Score");
+      ImGui::TableSetupColumn("Accuracy");
+      ImGui::TableSetupColumn("Clicks");
+      ImGui::TableSetupColumn("Duration");
+      ImGui::TableHeadersRow();
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      ImGui::TextFmt("{:.2f}", analysis_->score);
+      ImGui::TableNextColumn();
+      ImGui::TextFmt("{:.1f}%", analysis_->accuracy_percent);
+      ImGui::TableNextColumn();
+      ImGui::TextFmt("{}", analysis_->clicks);
+      ImGui::TableNextColumn();
+      ImGui::TextFmt("{:.1f}s", analysis_->duration_seconds);
+      ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Weak Points");
+    if (analysis_->findings.empty()) {
+      ImGui::TextWrapped("No major weak point was detected from the available replay data.");
+    }
+    for (const auto& finding : analysis_->findings) {
+      ImGui::PushID(&finding);
+      ImGui::Text("[%s] %s", AnalysisSeverityLabel(finding.severity).c_str(),
+                  finding.title.c_str());
+      ImGui::TextWrapped("%s", finding.detail.c_str());
+      if (finding.timestamp_seconds >= 0) {
+        ImGui::TextDisabled("Replay time: %.2fs", finding.timestamp_seconds);
+      }
+      ImGui::Spacing();
+      ImGui::PopID();
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Replay Review");
+    ImGui::TextWrapped(
+        "Use Watch replay to inspect the exact movement path. The analysis above is derived from "
+        "the same captured replay, including click events, pitch/yaw frames, target snapshots, "
+        "and score samples.");
+
+    ImGui::Spacing();
+    ImGui::Text("AI Overview");
+    if (!nim_state_) {
+      if (IsNimConfigured()) {
+        if (ImGui::Button("Generate AI Overview")) {
+          nim_state_ = StartNimAnalysis(BuildNimAnalysisPrompt(*analysis_));
+        }
+      } else {
+        ImGui::TextWrapped(
+            "NVIDIA NIM is optional. Set NVIDIA_NIM_API_KEY to enable AI coaching. "
+            "NVIDIA_NIM_MODEL and NVIDIA_NIM_ENDPOINT can override the defaults.");
+      }
+    }
+
+    if (nim_state_) {
+      std::lock_guard lock(nim_state_->mutex);
+      if (!nim_state_->done) {
+        ImGui::Text("Analyzing replay with NVIDIA NIM...");
+      } else if (!nim_state_->success) {
+        ImGui::TextWrapped("AI analysis failed: %s", nim_state_->error.c_str());
+      } else {
+        ImGui::TextWrapped("%s", nim_state_->response.c_str());
+      }
+    }
+
+    ImGui::EndChild();
+  }
+
   void DrawHistory() {
     DrawHistoryPlot(std::format("##FullScoreHistory_{}_{}", scenario_name_, run_id_),
                     details_,
@@ -861,6 +968,8 @@ class StatsScreen : public UiScreen {
   SelectedScreen selected_screen_ = SelectedScreen::STATS;
   std::shared_ptr<Replay> replay_;
   std::optional<ScoresOverTime> scores_over_time_;
+  std::optional<ScenarioAnalysis> analysis_;
+  std::shared_ptr<NimAnalysisState> nim_state_;
   float score_target_ = 0;
   bool delay_display_;
   std::unique_ptr<TopBar> top_bar_ = CreateTopBar();
