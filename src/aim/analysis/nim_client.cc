@@ -242,9 +242,9 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
         if (!input) {
           continue;
         }
-        std::string bytes(
+        std::string bytes{
             std::istreambuf_iterator<char>(input),
-            std::istreambuf_iterator<char>());
+            std::istreambuf_iterator<char>()};
         const std::string encoded = Base64Encode(bytes);
         payload << ",{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,"
                 << encoded << "\",\"detail\":\"low\"}}";
