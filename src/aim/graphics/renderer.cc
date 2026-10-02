@@ -477,7 +477,7 @@ class RendererImpl : public Renderer {
                                                  ctx->capture_pixel_format,
                                                  pixels,
                                                  ctx->capture_pitch);
-    bool saved = surface != nullptr && IMG_SavePNG(surface, ctx->capture_path.string().c_str());
+    bool saved = surface != nullptr && IMG_SaveJPG(surface, ctx->capture_path.string().c_str(), 70);
     if (surface != nullptr) {
       SDL_DestroySurface(surface);
     }
