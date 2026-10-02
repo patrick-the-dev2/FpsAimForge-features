@@ -540,7 +540,7 @@ class ReplayViewerScreen : public Screen {
       std::error_code ec;
       std::filesystem::create_directories(capture_dir, ec);
       render_context.capture_path =
-          capture_dir / std::format("frame_{:04}.jpg", capture_frame_index_);
+          capture_dir / std::format("frame_{:04}.png", capture_frame_index_);
     }
     app_.renderer().RenderScenario(projection_,
                                    replay.room,
