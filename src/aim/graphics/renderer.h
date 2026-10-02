@@ -30,6 +30,9 @@ struct RenderContext {
   bool capture_frame = false;
   std::filesystem::path capture_path;
   std::string capture_error;
+  SDL_GPUTransferBuffer* capture_transfer = nullptr;
+  SDL_PixelFormat capture_pixel_format = SDL_PIXELFORMAT_UNKNOWN;
+  Uint32 capture_pitch = 0;
 
  private:
   Stopwatch default_stopwatch_;
