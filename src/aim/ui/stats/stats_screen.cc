@@ -335,8 +335,8 @@ class StatsScreen : public UiScreen {
       selected_screen_ = SelectedScreen::HISTORY;
     }
     if (replay_ && ImGui::Selectable(std::format("{} Replay Review", icons::kLiveTv).c_str(),
-                                      selected_screen_ == SelectedScreen::ANALYSIS)) {
-      selected_screen_ = SelectedScreen::ANALYSIS;
+                                      false)) {
+      PushNextScreen(CreateReplayViewerScreen(replay_, &app_));
     }
     if (performance_stats_) {
       std::string label = std::format("{} Perf", icons::kSmartToy);
