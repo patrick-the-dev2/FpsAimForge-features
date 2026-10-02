@@ -17,7 +17,7 @@ namespace {
 
 constexpr const char* kDefaultEndpoint =
     "https://integrate.api.nvidia.com/v1/chat/completions";
-constexpr const char* kDefaultModel = "deepseek-ai/deepseek-v4-flash";
+constexpr const char* kDefaultModel = "deepseek-ai/deepseek-v4.1-flash";
 std::atomic_uint64_t g_request_counter{0};
 
 std::string GetEnv(const char* name) {
