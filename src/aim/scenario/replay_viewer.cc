@@ -1,6 +1,8 @@
 #include "replay_viewer.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <format>
 
 #include "SDL3/SDL.h"  // IWYU pragma: keep
 #include "absl/cleanup/cleanup.h"
@@ -9,6 +11,7 @@
 #include "aim/common/mat_icons.h"
 #include "aim/common/times.h"
 #include "aim/common/util.h"
+#include "aim/analysis/nim_client.h"
 #include "aim/core/application.h"
 #include "aim/core/local_store.h"
 #include "aim/core/settings_manager.h"
@@ -325,11 +328,14 @@ class ReplayView {
 
 class ReplayViewerScreen : public Screen {
  public:
-  ReplayViewerScreen(std::shared_ptr<Replay> replay, Application* app)
+  ReplayViewerScreen(std::shared_ptr<Replay> replay,
+                      Application* app,
+                      std::shared_ptr<VisualReplayCaptureState> capture_state = nullptr)
       : Screen(*app),
         replay_(replay),
         timer_(replay->replay_fps),
-        replay_view_(std::make_unique<ReplayView>(replay, *app)) {
+        replay_view_(std::make_unique<ReplayView>(replay, *app)),
+        capture_state_(std::move(capture_state)) {
     float approximate_mb = replay->GetApproximateSizeMb();
     settings_ = app->settings_manager().GetCurrentSettingsForScenario(replay->scenario_name);
     crosshair_ = app->settings_manager().GetCurrentCrosshair();
@@ -402,7 +408,7 @@ class ReplayViewerScreen : public Screen {
 
     float duration_seconds = replay.GetDurationSeconds();
 
-    i64 now_micros = GetNowMicros();
+    i64 now_micros = capture_state_ ? capture_time_micros_ : GetNowMicros();
     replay_view_->SeekForwardToTimeMicros(now_micros, settings_.sounds());
 
     bool do_render = timer_.LastFrameRenderStartedMicrosAgo() > 2000;
@@ -527,15 +533,56 @@ class ReplayViewerScreen : public Screen {
     ImGui::End();
 
     LookAtInfo look_at = replay_view_->camera.GetLookAt();
+    RenderContext render_context;
+    if (capture_state_) {
+      render_context.capture_frame = true;
+      const auto capture_dir = std::filesystem::temp_directory_path() / "fpsaimforge_replay_visual";
+      std::error_code ec;
+      std::filesystem::create_directories(capture_dir, ec);
+      render_context.capture_path =
+          capture_dir / std::format("frame_{:04}.jpg", capture_frame_index_);
+    }
     app_.renderer().RenderScenario(projection_,
                                    replay.room,
                                    replay.shot_type,
                                    theme_,
                                    settings_.health_bar(),
                                    replay_view_->target_manager.GetTargets(),
-                                   look_at);
+                                   look_at,
+                                   capture_state_ ? &render_context : nullptr);
 
-    if (replay_view_->IsDone()) {
+    if (capture_state_) {
+      bool finish_capture = false;
+      std::vector<std::filesystem::path> paths;
+      std::string prompt;
+      {
+        std::lock_guard lock(capture_state_->mutex);
+        if (!render_context.capture_error.empty()) {
+          capture_state_->active = false;
+          capture_state_->done = true;
+          capture_state_->error = render_context.capture_error;
+        } else {
+          capture_state_->image_paths.push_back(render_context.capture_path);
+          capture_time_micros_ += capture_interval_micros_;
+          capture_frame_index_++;
+          const float duration = std::max(0.001f, replay.GetDurationSeconds());
+          capture_state_->progress =
+              std::min(1.0f, MicrosToSeconds(capture_time_micros_) / duration);
+          if (capture_time_micros_ > SecondsToMicros(duration)) {
+            capture_state_->active = false;
+            capture_state_->done = true;
+            paths = capture_state_->image_paths;
+            prompt = capture_state_->prompt;
+            finish_capture = true;
+          }
+        }
+      }
+      if (finish_capture) {
+        capture_state_->nim_state = StartNimVisualAnalysis(prompt, paths);
+      }
+    }
+
+    if (replay_view_->IsDone() && !capture_state_) {
       Pause();
     }
   }
@@ -591,6 +638,10 @@ class ReplayViewerScreen : public Screen {
   Crosshair crosshair_;
 
   std::unique_ptr<ReplayView> replay_view_;
+  std::shared_ptr<VisualReplayCaptureState> capture_state_;
+  i64 capture_time_micros_ = 0;
+  i64 capture_interval_micros_ = 500000;
+  int capture_frame_index_ = 0;
 
   // The time associated with the playback stopwatch. time + stopwatch.elapsed = now
   float playback_start_time_micros_ = 0;
@@ -605,8 +656,10 @@ class ReplayViewerScreen : public Screen {
 
 }  // namespace
 
-std::unique_ptr<Screen> CreateReplayViewerScreen(std::shared_ptr<Replay> replay, Application* app) {
-  return std::make_unique<ReplayViewerScreen>(std::move(replay), app);
+std::unique_ptr<Screen> CreateReplayViewerScreen(std::shared_ptr<Replay> replay,
+                                                    Application* app,
+                                                    std::shared_ptr<VisualReplayCaptureState> capture_state) {
+  return std::make_unique<ReplayViewerScreen>(std::move(replay), app, std::move(capture_state));
 }
 
 }  // namespace aim
