@@ -65,7 +65,6 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   int above_1deg = 0;
   int above_2deg = 0;
   int above_5deg = 0;
-  int loss_frames = 0;
   float loss_start_seconds = -1.0f;
   glm::vec3 previous_target_direction{};
   bool has_previous_target = false;
@@ -180,7 +179,6 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
 
       float nearest_error = std::numeric_limits<float>::max();
       glm::vec3 nearest_direction{};
-      u16 nearest_target_id = 0;
       for (const auto& [target_id, channel] : active_targets) {
         auto metadata_it = metadata_by_id.find(target_id);
         if (metadata_it == metadata_by_id.end()) continue;
@@ -201,7 +199,6 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
         if (angular_error < nearest_error) {
           nearest_error = angular_error;
           nearest_direction = direction;
-          nearest_target_id = target_id;
         }
       }
 
@@ -220,7 +217,6 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
           loss_start_seconds = frame_seconds;
           ++result.tracking_loss_count;
         }
-        ++loss_frames;
       } else if (loss_start_seconds >= 0.0f) {
         const float recovery_ms = (frame_seconds - loss_start_seconds) * 1000.0f;
         if (recovery_ms >= 0.0f) recovery_times_ms.push_back(recovery_ms);
