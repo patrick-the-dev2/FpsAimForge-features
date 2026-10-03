@@ -74,16 +74,16 @@ bool SaveRgbaPng(const std::filesystem::path& path,
     return false;
   }
 
-  // AI replay frames are deliberately downsampled before writing. A full 1920x1080 RGBA
-  // frame is over 8 MB even before base64 encoding, so keeping full-resolution frames for a
-  // 60-second replay would create an unnecessarily huge request on low-memory machines.
-  constexpr int kMaxCaptureWidth = 640;
-  constexpr int kMaxCaptureHeight = 360;
+  // AI replay frames are deliberately downsampled before writing. The captured swapchain
+  // can be 1080p or larger, so a smaller opaque RGB frame keeps the visual request practical
+  // on the user's low-memory Windows hardware while preserving the full replay timeline.
+  constexpr int kMaxCaptureWidth = 480;
+  constexpr int kMaxCaptureHeight = 270;
   const int output_width = std::min(width, kMaxCaptureWidth);
   const int output_height = std::min(height, kMaxCaptureHeight);
 
   std::vector<std::uint8_t> raw;
-  raw.reserve((static_cast<std::size_t>(output_width) * 4U + 1U) *
+  raw.reserve((static_cast<std::size_t>(output_width) * 3U + 1U) *
               static_cast<std::size_t>(output_height));
   for (int y = 0; y < output_height; ++y) {
     raw.push_back(0U);
@@ -97,7 +97,6 @@ bool SaveRgbaPng(const std::filesystem::path& path,
       raw.push_back(pixel[bgra ? 2 : 0]);
       raw.push_back(pixel[1]);
       raw.push_back(pixel[bgra ? 0 : 2]);
-      raw.push_back(pixel[3]);
     }
   }
 
@@ -107,7 +106,7 @@ bool SaveRgbaPng(const std::filesystem::path& path,
   AppendPngUint32(ihdr, static_cast<std::uint32_t>(output_width));
   AppendPngUint32(ihdr, static_cast<std::uint32_t>(output_height));
   ihdr.push_back(8U);
-  ihdr.push_back(6U);
+  ihdr.push_back(2U);
   ihdr.push_back(0U);
   ihdr.push_back(0U);
   ihdr.push_back(0U);
