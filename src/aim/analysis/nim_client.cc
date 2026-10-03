@@ -20,8 +20,19 @@ constexpr const char* kDefaultModel = "deepseek-ai/deepseek-v4.1-flash";
 std::atomic_uint64_t g_request_counter{0};
 
 std::string GetEnv(const char* name) {
+#ifdef _WIN32
+  char* value = nullptr;
+  size_t value_size = 0;
+  if (_dupenv_s(&value, &value_size, name) != 0 || value == nullptr) {
+    return {};
+  }
+  std::string result(value);
+  std::free(value);
+  return result;
+#else
   const char* value = std::getenv(name);
   return value == nullptr ? "" : value;
+#endif
 }
 
 std::string JsonEscape(const std::string& value) {
