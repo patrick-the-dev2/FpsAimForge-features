@@ -257,6 +257,9 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
     const auto config_path = base.string() + ".curl";
 
     std::error_code ec;
+    std::size_t total_image_bytes = 0;
+    bool request_too_large = false;
+    constexpr std::size_t kMaxVisualImageBytes = 50U * 1024U * 1024U;
     {
       std::ofstream payload(payload_path, std::ios::binary);
       payload << "{\"model\":\"" << JsonEscape(model)
@@ -287,12 +290,32 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
           continue;
         }
         bytes.resize(static_cast<std::size_t>(input.gcount()));
+        if (total_image_bytes + bytes.size() > kMaxVisualImageBytes) {
+          request_too_large = true;
+          break;
+        }
+        total_image_bytes += bytes.size();
         const std::string encoded = Base64Encode(bytes);
         payload << ",{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,"
                 << encoded << "\",\"detail\":\"low\"}}";
       }
 
       payload << "]}],\"max_tokens\":1800,\"temperature\":0.2,\"stream\":false}";
+    }
+
+    if (request_too_large) {
+      std::filesystem::remove(payload_path, ec);
+      std::filesystem::remove(config_path, ec);
+      std::filesystem::remove(response_path, ec);
+      for (const auto& image_path : image_paths) {
+        std::filesystem::remove(image_path, ec);
+      }
+      std::lock_guard lock(state->mutex);
+      state->done = true;
+      state->error =
+          "NVIDIA NIM visual request is too large. Replay frames were capped at 50 MB; "
+          "reduce the replay length or captured resolution.";
+      return;
     }
 
     {
