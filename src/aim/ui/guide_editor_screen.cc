@@ -113,12 +113,16 @@ class SectionEditor {
       ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch);
       ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, menu_width);
 
+      std::vector<std::string> add_playlists;
+      int add_playlists_at_i = -1;
+      std::optional<float> last_cm_per_360;
       ImGui::LoopId loop_id;
       ListUpdater list_updater;
       for (int i = 0; i < section.playlists_size(); ++i) {
         auto lid = loop_id.Get("Playlist");
         ImGui::TableNextRow();
         const std::string& playlist_name = section.playlists(i);
+        NameInfo info = GetNameInfo(playlist_name);
 
         ImGui::TableNextColumn();
         playlist_drag_and_drop_.DrawDragHandle(i, playlist_name);
@@ -135,6 +139,20 @@ class SectionEditor {
             select_variation_dialog_.NotifyOpen(playlist_name);
           }
           list_updater.DrawMoveMenuItems(i);
+          if (info.cm_per_360) {
+            if (ImGui::Selectable(std::format("{} Add cm/360 variations", icons::kAdd))) {
+              float step = 5;
+              if (last_cm_per_360) {
+                step = *info.cm_per_360 - *last_cm_per_360;
+              }
+              add_playlists_at_i = i;
+              NameInfo to_add = info;
+              for (int n = 0; n < 5; ++n) {
+                *to_add.cm_per_360 += step;
+                add_playlists.push_back(to_add.GetFullName());
+              }
+            }
+          }
           ImGui::SpacedSeparator();
           list_updater.DrawDeleteMenuItem(i);
           ImGui::EndPopup();
@@ -145,12 +163,18 @@ class SectionEditor {
         if (ImGui::IconButton(icons::kMoreVert)) {
           ImGui::OpenPopup(item_menu);
         }
+        last_cm_per_360 = info.cm_per_360;
       }
 
       ImGui::EndTable();
 
       playlist_drag_and_drop_.Update(section.mutable_playlists());
       list_updater.Update(section.mutable_playlists());
+      if (add_playlists.size() > 0) {
+        for (int i = add_playlists.size() - 1; i >= 0; --i) {
+          InsertAtIndex(section.mutable_playlists(), add_playlists[i], add_playlists_at_i + 1);
+        }
+      }
     }
 
     SelectObjectDialog::Result add_result;
