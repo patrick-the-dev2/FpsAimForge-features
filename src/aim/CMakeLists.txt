@@ -185,6 +185,8 @@ set(SRCS
     "ui/playlist_editor_screen.h"
     "ui/base_editor_screen.cc"
     "ui/base_editor_screen.h"
+    "ui/ai_assistant_screen.cc"
+    "ui/ai_assistant_screen.h"
     "ui/guide_ui.cc"
     "ui/guide_ui.h"
     "ui/home_screen.cc"
