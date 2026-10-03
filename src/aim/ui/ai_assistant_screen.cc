@@ -276,7 +276,7 @@ class AiAssistantScreen : public UiScreen {
       if (target_name.find(':') == std::string::npos) {
         target_name = app_.bundle_manager().GetDefaultWritableBundleName() + ":" + target_name;
       }
-      const std::string scenario_bundle = GetNameInfo(target_name).bundle_name;
+      const std::string scenario_bundle = GetNameInfo(target_name).GetBundleName();
       if (scenario_bundle.empty() || app_.bundle_manager().IsBundleReadonly(scenario_bundle)) {
         messages_.push_back({false, "That scenario targets a readonly or invalid bundle. Nothing was changed."});
         return;
@@ -312,7 +312,7 @@ class AiAssistantScreen : public UiScreen {
       if (target_name.find(':') == std::string::npos) {
         target_name = app_.bundle_manager().GetDefaultWritableBundleName() + ":" + target_name;
       }
-      const std::string playlist_bundle = GetNameInfo(target_name).bundle_name;
+      const std::string playlist_bundle = GetNameInfo(target_name).GetBundleName();
       if (playlist_bundle.empty() || app_.bundle_manager().IsBundleReadonly(playlist_bundle)) {
         messages_.push_back({false, "That playlist targets a readonly or invalid bundle. Nothing was changed."});
         return;
