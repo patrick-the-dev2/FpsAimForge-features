@@ -70,7 +70,7 @@ TEST(ScenarioAnalysisTest, ReportsContinuousTrackingLosses) {
   EXPECT_GT(analysis.time_above_5deg_percent, 0.0f);
   EXPECT_GT(analysis.longest_loss_duration_seconds, 0.0f);
   EXPECT_GT(analysis.largest_error_timestamp, 0.0f);
-  EXPECT_NE(analysis.tracking_summary.find("tracking losses"), std::string::npos);
+  EXPECT_NE(analysis.tracking_summary.find("Tracking losses"), std::string::npos);
 }
 
 TEST(ScenarioAnalysisTest, BuildsCoachPromptFromMeasuredData) {
