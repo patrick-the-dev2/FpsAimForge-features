@@ -102,7 +102,7 @@ jobs:
           git fetch --depth=1 https://github.com/mjohns/FpsAimForge.git main
           git diff --exit-code FETCH_HEAD -- src/aim/core/camera.cc src/aim/scenario/base_scenario.cc src/aim/scenario/base_scenario.h src/resources/bundles/AF.bundle.json
       - name: Configure Windows x64 release
-        run: cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
+        run: cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 
       - name: Build FpsAimForge
         run: cmake --build build-windows --config Release --target FpsAimForge --parallel 2
@@ -119,6 +119,9 @@ jobs:
           Copy-Item build-windows/bin/Release/FpsAimForge.exe release-windows/FpsAimForge.exe
           Copy-Item -Recurse src/resources release-windows/resources
           Copy-Item -Recurse build-windows/bin/shaders release-windows/shaders
+          if (-not (Test-Path release-windows/FpsAimForge.exe)) { throw "Windows executable missing from release package." }
+          $shaderCount = (Get-ChildItem -Recurse -File release-windows/shaders | Measure-Object).Count
+          if ($shaderCount -lt 1) { throw "Compiled shader package is empty." }
 
       - name: Upload Windows release artifact
         uses: actions/upload-artifact@v4
