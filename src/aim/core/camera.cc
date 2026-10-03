@@ -19,7 +19,7 @@
 namespace aim {
 namespace {
 
-constexpr float kMaxPitch = glm::radians(85.0f);
+constexpr float kMaxPitch = glm::radians(89.0f);
 constexpr float kMinPitch = -1 * kMaxPitch;
 
 glm::vec3 GetNormalizedRight(const glm::vec3& v, const glm::vec3& up) {
