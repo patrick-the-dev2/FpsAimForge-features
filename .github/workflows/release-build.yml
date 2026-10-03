@@ -58,26 +58,12 @@ jobs:
       - name: Verify legacy gameplay parity
         shell: bash
         run: |
-          python3 - <<'PY'
-          import urllib.request
-          from pathlib import Path
-
-          files = [
-              "src/aim/core/camera.cc",
-              "src/aim/scenario/base_scenario.cc",
-              "src/aim/scenario/base_scenario.h",
-              "src/resources/bundles/AF.bundle.json",
-          ]
-          for path in files:
-              url = "https://raw.githubusercontent.com/mjohns/FpsAimForge/main/" + path
-              with urllib.request.urlopen(url, timeout=30) as response:
-                  upstream = response.read()
-              local = Path(path).read_bytes()
-              if local != upstream:
-                  raise SystemExit(f"LEGACY PARITY FAILURE: {path}")
-              print(f"legacy parity OK: {path}")
-          PY
-
+          git fetch --depth=1 https://github.com/mjohns/FpsAimForge.git main
+          git diff --exit-code FETCH_HEAD -- \
+            src/aim/core/camera.cc \
+            src/aim/scenario/base_scenario.cc \
+            src/aim/scenario/base_scenario.h \
+            src/resources/bundles/AF.bundle.json
       - name: Configure release build
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
@@ -113,20 +99,8 @@ jobs:
       - name: Verify legacy gameplay parity
         shell: pwsh
         run: |
-          $files = @(
-            "src/aim/core/camera.cc",
-            "src/aim/scenario/base_scenario.cc",
-            "src/aim/scenario/base_scenario.h",
-            "src/resources/bundles/AF.bundle.json"
-          )
-          foreach ($path in $files) {
-            $url = "https://raw.githubusercontent.com/mjohns/FpsAimForge/main/$path"
-            $upstream = (Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 30).Content
-            $local = [System.IO.File]::ReadAllText((Resolve-Path $path))
-            if ($local -ne $upstream) { throw "LEGACY PARITY FAILURE: $path" }
-            Write-Host "legacy parity OK: $path"
-          }
-
+          git fetch --depth=1 https://github.com/mjohns/FpsAimForge.git main
+          git diff --exit-code FETCH_HEAD -- src/aim/core/camera.cc src/aim/scenario/base_scenario.cc src/aim/scenario/base_scenario.h src/resources/bundles/AF.bundle.json
       - name: Configure Windows x64 release
         run: cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
 
