@@ -694,7 +694,7 @@ class AimDbImpl : public AimDb {
       stats.stats_id = sqlite3_column_int64(stmt, 0);
       stats.epoch_seconds = sqlite3_column_int64(stmt, 1);
       stats.score = sqlite3_column_double(stmt, 2);
-      stats.mm_per_360 = static_cast<i16>(sqlite3_column_int(stmt, 3));
+      stats.mm_per_360 = sqlite3_column_int(stmt, 3);
       if (!IsColumnNull(stmt, 4)) {
         const void* blob_data = sqlite3_column_blob(stmt, 4);
         int blob_size = sqlite3_column_bytes(stmt, 4);
