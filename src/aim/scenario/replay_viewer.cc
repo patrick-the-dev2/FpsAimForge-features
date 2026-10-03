@@ -561,6 +561,11 @@ class ReplayViewerScreen : public Screen {
           capture_state_->active = false;
           capture_state_->done = true;
           capture_state_->error = render_context.capture_error;
+          for (const auto& image_path : capture_state_->image_paths) {
+            std::error_code cleanup_ec;
+            std::filesystem::remove(image_path, cleanup_ec);
+          }
+          capture_state_->image_paths.clear();
         } else {
           capture_state_->image_paths.push_back(render_context.capture_path);
           capture_time_micros_ += capture_interval_micros_;
