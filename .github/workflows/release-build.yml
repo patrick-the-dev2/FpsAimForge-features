@@ -71,6 +71,7 @@ jobs:
           mkdir -p release
           cp build/bin/FpsAimForge release/FpsAimForge
           cp -r src/resources release/resources
+          cp -r build/bin/shaders release/shaders
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
@@ -103,7 +104,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path release-windows | Out-Null
           Copy-Item build-windows/bin/Release/FpsAimForge.exe release-windows/FpsAimForge.exe
           Copy-Item -Recurse src/resources release-windows/resources
-          Copy-Item -Recurse shaders/compiled release-windows/shaders/compiled
+          Copy-Item -Recurse build-windows/bin/shaders release-windows/shaders
 
       - name: Upload Windows release artifact
         uses: actions/upload-artifact@v4
