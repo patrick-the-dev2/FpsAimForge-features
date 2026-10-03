@@ -196,7 +196,14 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
     state->response = ExtractJsonString(response, "content");
     state->success = !state->response.empty();
     if (!state->success) {
-      state->error = "NVIDIA NIM returned no assistant content.";
+      const std::string api_error = ExtractJsonString(response, "message");
+      const std::string error_detail = ExtractJsonString(response, "detail");
+      if (!api_error.empty()) {
+        state->error = "NVIDIA NIM rejected the request: " + api_error;
+        if (!error_detail.empty()) state->error += " (" + error_detail + ")";
+      } else {
+        state->error = "NVIDIA NIM returned no assistant content.";
+      }
     }
   }).detach();
 
@@ -330,7 +337,14 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
     state->response = ExtractJsonString(response, "content");
     state->success = !state->response.empty();
     if (!state->success) {
-      state->error = "NVIDIA NIM returned no visual assistant content.";
+      const std::string api_error = ExtractJsonString(response, "message");
+      const std::string error_detail = ExtractJsonString(response, "detail");
+      if (!api_error.empty()) {
+        state->error = "NVIDIA NIM rejected the visual request: " + api_error;
+        if (!error_detail.empty()) state->error += " (" + error_detail + ")";
+      } else {
+        state->error = "NVIDIA NIM returned no visual assistant content.";
+      }
     }
   }).detach();
 
