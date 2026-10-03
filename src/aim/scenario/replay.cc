@@ -17,8 +17,8 @@ ReplayRecorder::ReplayRecorder(const std::string& scenario_name,
   replay_ = std::make_shared<Replay>();
   replay_->scenario_name = scenario_name;
   replay_->room = room;
-  replay_->replay_fps = static_cast<u16>(replay_fps);
-  replay_->num_targets = static_cast<u16>(num_targets);
+  replay_->replay_fps = replay_fps;
+  replay_->num_targets = num_targets;
   replay_->shot_type = shot_type;
 
   i32 max_replay_frame_number = replay_fps * duration_seconds;
@@ -85,13 +85,13 @@ void ReplayRecorder::AddTarget(i64 now_micros, const Target& target) {
     }
   }
 
-  target_data_channel_map_[target.id] = static_cast<u16>(available_channel);
+  target_data_channel_map_[target.id] = available_channel;
 
   replay_->target_metadata.push_back({});
   ReplayTargetMetadata& metadata = replay_->target_metadata.back();
   metadata.add_time_micros = now_micros;
   metadata.target_id = target.id;
-  metadata.data_channel = static_cast<u16>(available_channel);
+  metadata.data_channel = available_channel;
   metadata.initial_data.position = target.position;
   metadata.initial_data.radius = target.radius;
   metadata.is_ghost = target.is_ghost;
@@ -161,7 +161,7 @@ void ReplayRecorder::SnapshotTargets(i64 frame_number, const std::vector<Target>
         ReplayTargetData& data = replay_->target_data[start_index + data_channel];
         data.position = target.position;
         data.radius = target.radius;
-        data.health = static_cast<u8>(std::round(target.GetHealthPercent() * 255));
+        data.health = std::round(target.GetHealthPercent() * 255);
       }
     }
   }
