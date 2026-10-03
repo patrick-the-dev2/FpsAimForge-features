@@ -87,3 +87,14 @@ GitHub Actions now builds the release target, runs the existing test suite, and 
 The AI reviewer can now render the complete recorded scenario at 0.5-second intervals, capture the replay visuals as temporary JPEG frames, and send the chronological frame sequence plus deterministic replay telemetry to NVIDIA NIM. Visual capture happens only when the user starts **Watch Full Scenario with AI**, not during normal gameplay. Temporary frames are deleted after the NIM request completes.
 
 The default visual model is `deepseek-ai/deepseek-v4.1-flash`, which supports image input. Override it with `NVIDIA_NIM_VISION_MODEL` when needed.
+
+
+## AI replay coaching
+
+Replay analysis is available from the Stats screen. The deterministic analyzer reads recorded replay telemetry for accuracy, click pacing, movement speed, direction changes, target-relative tracking error, tracking losses, recovery time, and timestamped failure points.
+
+**Full visual review** captures the complete replay chronologically at up to 60 visual checkpoints. Frames are downsampled to a maximum of 480x270 RGB PNG before being sent to the configured NVIDIA NIM vision model. Capture does not alter scenario logic, hit registration, score calculation, target movement, or the legacy scenario bundle.
+
+Set `NVIDIA_NIM_API_KEY` or `NVIDIA_API_KEY` for NVIDIA-hosted inference. `NVIDIA_NIM_MODEL`, `NVIDIA_NIM_VISION_MODEL`, and `NVIDIA_NIM_ENDPOINT` can override the model or endpoint. The default visual model is `deepseek-ai/deepseek-v4.1-flash`.
+
+The Windows release package contains `FpsAimForge.exe`, `resources/`, and compiled `shaders/`. The release workflow builds Linux and Windows x64 artifacts, runs the tests, verifies gameplay-critical source parity against upstream, and uses the static MSVC runtime for the Windows package.
