@@ -88,8 +88,9 @@ void BaseScenario::UpdateState(UpdateStateData* data) {
     }
   }
 
+  // These are switching targets that were within the grace period to count as a kill.
   if (shot_type == ShotType::kTrackingKill || shot_type == ShotType::kTrackingInvincible) {
-    HandleTrackingHits(data, &targets_to_remove);
+    HandleTrackingHits(data);
   } else if (shot_type == ShotType::kTrackingProximity) {
     HandleProximityTrackingHits(data);
   } else if (shot_type == ShotType::kPoke) {
@@ -209,8 +210,7 @@ void BaseScenario::HandleProximityTrackingHits(UpdateStateData* data) {
       timer_.GetElapsedMicros(), normalized_distance_from_center, replay_.get());
 }
 
-void BaseScenario::HandleTrackingHits(UpdateStateData* data,
-                                      std::vector<u16>* target_ids_to_remove) {
+void BaseScenario::HandleTrackingHits(UpdateStateData* data) {
   if (data->is_click_held) {
     auto maybe_hit_target_id = target_manager_.GetNearestHitTarget(camera_, look_at_.front);
     if (!tracking_sound_) {
@@ -276,7 +276,9 @@ void BaseScenario::HandleTrackingHits(UpdateStateData* data,
       if (remove_if_below_health_seconds > 0 && !target.is_hit) {
         float remaining_health_seconds = target.GetHealthPercent() * target.health_seconds;
         if (remaining_health_seconds <= remove_if_below_health_seconds) {
-          target_ids_to_remove->push_back(target.id);
+          stats_.num_hits += GetPartialHitValue(target);
+          stats_.num_kills++;
+          AddNewTarget(target.id);
         }
       }
     }
@@ -288,6 +290,10 @@ void BaseScenario::OnScenarioDone() {
   stats_.shot_stopwatch.Stop();
   TrackingHoldDone();
   if (ShouldCountPartialKills()) {
+    // TODO: We should really count partial kills here if there is
+    // |remove_if_below_health_seconds| and the target is "killed".
+    // The user would have to have the mouse still over the target when the scenario ends and have
+    // almost killed the target. Unlikely.
     float partial_kills = 0;
     for (Target& target : target_manager_.GetMutableTargets()) {
       partial_kills += GetPartialHitValue(target);
