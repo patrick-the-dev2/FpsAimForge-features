@@ -59,6 +59,17 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   std::vector<float> click_intervals_ms;
   std::vector<float> mouse_speeds;
   std::vector<float> tracking_errors;
+  std::vector<float> target_speeds;
+  std::vector<float> recovery_times_ms;
+  int tracking_samples = 0;
+  int above_1deg = 0;
+  int above_2deg = 0;
+  int above_5deg = 0;
+  int loss_frames = 0;
+  float loss_start_seconds = -1.0f;
+  float previous_target_speed = 0.0f;
+  glm::vec3 previous_target_direction{};
+  bool has_previous_target = false;
 
   int miss_streak = 0;
   i64 last_click_time = -1;
@@ -145,6 +156,8 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
     for (size_t frame = 0; frame < replay.pitch_yaws.size(); ++frame) {
       const i64 frame_micros =
           static_cast<i64>(frame) * 1000000 / replay.replay_fps;
+      const float frame_seconds =
+          static_cast<float>(frame_micros) / 1000000.0f;
 
       while (metadata_index < replay.target_metadata.size() &&
              replay.target_metadata[metadata_index].add_time_micros <= frame_micros) {
@@ -164,36 +177,128 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
       const LookAtInfo look_at = camera.GetLookAt();
 
       float nearest_error = std::numeric_limits<float>::max();
+      glm::vec3 nearest_direction{};
+      u16 nearest_target_id = 0;
       for (const auto& [target_id, channel] : active_targets) {
         auto metadata_it = metadata_by_id.find(target_id);
         if (metadata_it == metadata_by_id.end()) continue;
 
         glm::vec3 position = metadata_it->second.initial_data.position;
-        float radius = metadata_it->second.initial_data.radius;
         if (!replay.target_data.empty()) {
           const i64 index = static_cast<i64>(frame) * replay.num_targets + channel;
           if (index >= 0 && index < static_cast<i64>(replay.target_data.size()) &&
               replay.target_data[index].radius > 0) {
             position = replay.target_data[index].position;
-            radius = replay.target_data[index].radius;
           }
         }
 
-        auto miss_distance = GetNormalizedMissedShotDistance(
-            camera.GetPosition(), look_at.front, position);
-        if (miss_distance) {
-          // The existing metric is a normalized plane distance, so atan(error)
-          // gives the angular miss approximation directly. Target radius is
-          // intentionally not mixed into this conversion.
-          (void)radius;
-          nearest_error =
-              std::min(nearest_error, ToDegrees(std::atan(*miss_distance)));
+        const glm::vec3 direction =
+            glm::normalize(position - camera.GetPosition());
+        const float dot = std::clamp(glm::dot(look_at.front, direction), -1.0f, 1.0f);
+        const float angular_error = ToDegrees(std::acos(dot));
+        if (angular_error < nearest_error) {
+          nearest_error = angular_error;
+          nearest_direction = direction;
+          nearest_target_id = target_id;
         }
       }
-      if (nearest_error < std::numeric_limits<float>::max()) {
-        tracking_errors.push_back(nearest_error);
+
+      if (nearest_error == std::numeric_limits<float>::max()) {
+        continue;
       }
+
+      ++tracking_samples;
+      tracking_errors.push_back(nearest_error);
+      if (nearest_error > 1.0f) ++above_1deg;
+      if (nearest_error > 2.0f) ++above_2deg;
+      if (nearest_error > 5.0f) ++above_5deg;
+
+      if (nearest_error > 2.0f) {
+        if (loss_start_seconds < 0.0f) {
+          loss_start_seconds = frame_seconds;
+          ++result.tracking_loss_count;
+        }
+        ++loss_frames;
+      } else if (loss_start_seconds >= 0.0f) {
+        const float recovery_ms = (frame_seconds - loss_start_seconds) * 1000.0f;
+        if (recovery_ms >= 0.0f) recovery_times_ms.push_back(recovery_ms);
+        result.longest_loss_duration_seconds =
+            std::max(result.longest_loss_duration_seconds,
+                     frame_seconds - loss_start_seconds);
+        loss_start_seconds = -1.0f;
+      }
+
+      if (nearest_error > result.worst_tracking_error) {
+        result.worst_tracking_error = nearest_error;
+        result.largest_error_timestamp = frame_seconds;
+      }
+
+      if (has_previous_target && nearest_target_id == nearest_target_id) {
+        const float target_delta =
+            ToDegrees(std::acos(std::clamp(glm::dot(previous_target_direction,
+                                                     nearest_direction),
+                                           -1.0f, 1.0f)));
+        const float target_speed = target_delta * replay.replay_fps;
+        target_speeds.push_back(target_speed);
+
+        if (target_speed > 0.5f &&
+            previous_target_speed > 0.5f &&
+            ((target_speed - previous_target_speed) *
+             (previous_target_speed - 0.0f) < 0.0f)) {
+          // Speed sign is not available from an unsigned angular distance.
+          // Direction reversals are detected below from camera-relative motion.
+        }
+      }
+
+      previous_target_direction = nearest_direction;
+      previous_target_speed = target_speeds.empty() ? 0.0f : target_speeds.back();
+      has_previous_target = true;
     }
+
+    if (loss_start_seconds >= 0.0f) {
+      const float recovery_duration =
+          result.duration_seconds - loss_start_seconds;
+      result.longest_loss_duration_seconds =
+          std::max(result.longest_loss_duration_seconds, recovery_duration);
+    }
+
+    if (tracking_samples > 0) {
+      result.average_tracking_error =
+          std::accumulate(tracking_errors.begin(), tracking_errors.end(), 0.0f) /
+          tracking_errors.size();
+      result.tracking_time_percent = 100.0f * tracking_samples /
+                                     static_cast<float>(replay.pitch_yaws.size());
+      result.time_above_1deg_percent =
+          100.0f * above_1deg / static_cast<float>(tracking_samples);
+      result.time_above_2deg_percent =
+          100.0f * above_2deg / static_cast<float>(tracking_samples);
+      result.time_above_5deg_percent =
+          100.0f * above_5deg / static_cast<float>(tracking_samples);
+    }
+    if (!target_speeds.empty()) {
+      result.average_target_speed =
+          std::accumulate(target_speeds.begin(), target_speeds.end(), 0.0f) /
+          target_speeds.size();
+      result.peak_target_speed =
+          *std::max_element(target_speeds.begin(), target_speeds.end());
+    }
+    if (!recovery_times_ms.empty()) {
+      result.average_recovery_time_ms =
+          std::accumulate(recovery_times_ms.begin(), recovery_times_ms.end(), 0.0f) /
+          recovery_times_ms.size();
+    }
+
+    result.tracking_summary = std::format(
+        "Tracking samples: {} ({:.1f}% of replay). Average target-relative error: {:.2f} deg. "
+        "Worst error: {:.2f} deg at {}. Time above 1/2/5 deg: {:.1f}%/{:.1f}%/{:.1f}%. "
+        "Tracking losses: {}, longest loss: {:.2f}s, average recovery: {:.0f} ms. "
+        "Target speed: {:.1f} deg/s average, {:.1f} deg/s peak.",
+        tracking_samples, result.tracking_time_percent, result.average_tracking_error,
+        result.worst_tracking_error, FormatTime(result.largest_error_timestamp),
+        result.time_above_1deg_percent, result.time_above_2deg_percent,
+        result.time_above_5deg_percent, result.tracking_loss_count,
+        result.longest_loss_duration_seconds, result.average_recovery_time_ms,
+        result.average_target_speed, result.peak_target_speed);
   }
 
   if (result.misses > 0) {
@@ -255,13 +360,46 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   }
 
   if (result.has_target_snapshots && result.average_tracking_error > 0) {
-    AddFinding(&result,
-               result.average_tracking_error > 2.5f ? AnalysisSeverity::WARNING
-                                                    : AnalysisSeverity::INFO,
-               "Tracking", "Crosshair-to-target distance",
-               std::format("Average sampled error is {:.2f} degrees; worst sampled error is "
-                           "{:.2f} degrees.",
-                           result.average_tracking_error, result.worst_tracking_error));
+    const AnalysisSeverity severity =
+        result.time_above_5deg_percent >= 5.0f || result.longest_loss_duration_seconds >= 1.0f
+            ? AnalysisSeverity::CRITICAL
+            : result.time_above_2deg_percent >= 10.0f
+                  ? AnalysisSeverity::WARNING
+                  : AnalysisSeverity::INFO;
+    AddFinding(
+        &result, severity, "Tracking", "Target-relative control",
+        std::format(
+            "Average error {:.2f} deg, worst {:.2f} deg at {}. "
+            "{:.1f}% of tracked time was >1 deg, {:.1f}% >2 deg, {:.1f}% >5 deg. "
+            "{} tracking losses; longest {:.2f}s; average recovery {:.0f} ms.",
+            result.average_tracking_error, result.worst_tracking_error,
+            FormatTime(result.largest_error_timestamp), result.time_above_1deg_percent,
+            result.time_above_2deg_percent, result.time_above_5deg_percent,
+            result.tracking_loss_count, result.longest_loss_duration_seconds,
+            result.average_recovery_time_ms),
+        result.largest_error_timestamp);
+
+    if (result.time_above_2deg_percent >= 10.0f) {
+      AddFinding(
+          &result, AnalysisSeverity::WARNING, "Tracking", "Target separation",
+          std::format("{:.1f}% of tracked time was more than 2 degrees from the target. "
+                      "Focus on matching target velocity before making large corrections.",
+                      result.time_above_2deg_percent));
+    }
+    if (result.longest_loss_duration_seconds >= 0.5f) {
+      AddFinding(
+          &result, AnalysisSeverity::WARNING, "Failure point", "Longest tracking loss",
+          std::format("The largest sustained target separation lasted {:.2f}s around {}.",
+                      result.longest_loss_duration_seconds,
+                      FormatTime(result.largest_error_timestamp)),
+          result.largest_error_timestamp);
+    }
+    if (result.average_recovery_time_ms >= 250.0f) {
+      AddFinding(
+          &result, AnalysisSeverity::WARNING, "Recovery", "Slow target reacquisition",
+          std::format("Average recovery from >2 degree separation was {:.0f} ms.",
+                      result.average_recovery_time_ms));
+    }
   }
 
   std::ostringstream timeline;
@@ -277,11 +415,12 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   result.deterministic_summary = std::format(
       "Scenario '{}': {:.1f}s, score {:.2f}, {} hits / {} misses / {} clicks, {:.1f}% accuracy. "
       "Average click interval {:.0f} ms. Average mouse speed {:.1f} deg/s, peak {:.1f} deg/s. "
-      "High-speed movement {:.1f}%. Direction-change rate {:.1f}%.",
+      "High-speed movement {:.1f}%. Direction-change rate {:.1f}%. {}",
       result.scenario_name, result.duration_seconds, result.score, result.hits, result.misses,
       result.clicks, result.accuracy_percent, result.average_click_interval_ms,
       result.average_mouse_speed, result.peak_mouse_speed, result.high_speed_percent,
-      result.direction_change_rate);
+      result.direction_change_rate,
+      result.tracking_summary);
 
   return result;
 }
@@ -294,6 +433,7 @@ std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis) {
   prompt << "Scenario details:\\n" << analysis.deterministic_summary << "\\n";
   prompt << "Target snapshots: " << (analysis.has_target_snapshots ? "available" : "not available")
          << "\\n";
+  prompt << "Tracking diagnostics: " << analysis.tracking_summary << "\\n";
   prompt << "Replay timeline sample: " << analysis.timeline_summary << "\\n\\n";
   prompt << "Detected findings:\\n";
   for (const auto& finding : analysis.findings) {
