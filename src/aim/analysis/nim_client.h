@@ -17,6 +17,8 @@ struct NimAnalysisState {
 };
 
 std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt);
+std::shared_ptr<NimAnalysisState> StartNimChat(const std::string& system_prompt,
+                                                const std::string& conversation_prompt);
 std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
     const std::string& prompt, const std::vector<std::filesystem::path>& image_paths);
 bool IsNimConfigured();
