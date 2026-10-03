@@ -156,7 +156,7 @@ class AiAssistantScreen : public UiScreen {
     }
   }
 
-  std::string BuildAppContext() {
+  std::string BuildAppContext(const std::string& user_text) {
     std::string context;
     context += "FpsAimForge live application context. Do not claim capabilities not listed here.\n";
     context += "Writable bundles: ";
@@ -177,6 +177,14 @@ class AiAssistantScreen : public UiScreen {
                                aggregate.high_score_stats.score,
                                aggregate.last_run_stats.score,
                                aggregate.high_score_stats.mm_per_360);
+        if (user_text.find(name) != std::string::npos) {
+          auto full_stats = app_.stats_manager().GetStats(name);
+          context += std::format("    RAW STATS FOR REQUESTED SCENARIO ({} rows):\n", full_stats.size());
+          for (const auto& row : full_stats) {
+            context += std::format("      run={} epoch={} score={:.3f} cm360={}\n",
+                                   row.stats_id, row.epoch_seconds, row.score, row.mm_per_360);
+          }
+        }
       }
     }
 
@@ -268,6 +276,11 @@ class AiAssistantScreen : public UiScreen {
       if (target_name.find(':') == std::string::npos) {
         target_name = app_.bundle_manager().GetDefaultWritableBundleName() + ":" + target_name;
       }
+      const std::string scenario_bundle = GetNameInfo(target_name).bundle_name;
+      if (scenario_bundle.empty() || app_.bundle_manager().IsBundleReadonly(scenario_bundle)) {
+        messages_.push_back({false, "That scenario targets a readonly or invalid bundle. Nothing was changed."});
+        return;
+      }
       if (GetNameInfo(target_name).HasDynamicSuffix()) {
         messages_.push_back({false, "That scenario name is reserved for an automatic variation."});
         return;
@@ -298,6 +311,15 @@ class AiAssistantScreen : public UiScreen {
       std::string target_name = name;
       if (target_name.find(':') == std::string::npos) {
         target_name = app_.bundle_manager().GetDefaultWritableBundleName() + ":" + target_name;
+      }
+      const std::string playlist_bundle = GetNameInfo(target_name).bundle_name;
+      if (playlist_bundle.empty() || app_.bundle_manager().IsBundleReadonly(playlist_bundle)) {
+        messages_.push_back({false, "That playlist targets a readonly or invalid bundle. Nothing was changed."});
+        return;
+      }
+      if (app_.playlist_manager().GetPlaylist(target_name).has_value()) {
+        messages_.push_back({false, "That playlist already exists. I will not overwrite it automatically."});
+        return;
       }
       app_.playlist_manager().UpdatePlaylist(target_name, def);
       app_.bundle_manager().SaveDirtyBundles();
