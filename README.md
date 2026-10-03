@@ -84,7 +84,7 @@ GitHub Actions now builds the release target, runs the existing test suite, and 
 
 ### Full visual replay AI review
 
-The AI reviewer can now render the complete recorded scenario at 0.5-second intervals, capture the replay visuals as temporary JPEG frames, and send the chronological frame sequence plus deterministic replay telemetry to NVIDIA NIM. Visual capture happens only when the user starts **Watch Full Scenario with AI**, not during normal gameplay. Temporary frames are deleted after the NIM request completes.
+The AI reviewer can now render the complete recorded scenario at up to 60 visual checkpoints, capture the replay visuals as temporary PNG frames, and send the chronological frame sequence plus deterministic replay telemetry to NVIDIA NIM. Visual capture happens only when the user starts **Watch Full Scenario with AI**, not during normal gameplay. Temporary frames are deleted after the NIM request completes.
 
 The default visual model is `deepseek-ai/deepseek-v4.1-flash`, which supports image input. Override it with `NVIDIA_NIM_VISION_MODEL` when needed.
 
