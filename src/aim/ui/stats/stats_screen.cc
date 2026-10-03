@@ -300,13 +300,7 @@ class StatsScreen : public UiScreen {
           DrawStatsPanel();
         }
         if (selected_screen_ == SelectedScreen::PERF) {
-          if (replay_) {
-      if (ImGui::Selectable(std::format("{} Detailed Analysis", icons::kSmartToy).c_str(),
-                            selected_screen_ == SelectedScreen::ANALYSIS)) {
-        selected_screen_ = SelectedScreen::ANALYSIS;
-      }
-    }
-    if (performance_stats_) {
+          if (performance_stats_) {
             DrawPerformanceStats(*performance_stats_);
           }
         }
@@ -338,6 +332,11 @@ class StatsScreen : public UiScreen {
     if (replay_ && ImGui::Selectable(std::format("{} Replay Review", icons::kLiveTv).c_str(),
                                       false)) {
       PushNextScreen(CreateReplayViewerScreen(replay_, &app_));
+    }
+    if (replay_ && ImGui::Selectable(
+                        std::format("{} Detailed Analysis", icons::kSmartToy).c_str(),
+                        selected_screen_ == SelectedScreen::ANALYSIS)) {
+      selected_screen_ = SelectedScreen::ANALYSIS;
     }
     if (performance_stats_) {
       std::string label = std::format("{} Perf", icons::kSmartToy);
