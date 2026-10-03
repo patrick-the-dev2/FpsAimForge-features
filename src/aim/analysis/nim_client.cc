@@ -296,8 +296,7 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
 
     std::string response;
     if (exit_code == 0) {
-      std::ifstream input(response_path);
-      response.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+      response = ReadBinaryFile(response_path);
     }
 
     std::filesystem::remove(payload_path, ec);
