@@ -128,7 +128,8 @@ std::string GetNimConfigurationHint() {
          "override the model identifier.";
 }
 
-std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
+std::shared_ptr<NimAnalysisState> StartNimChat(const std::string& system_prompt,
+                                                const std::string& conversation_prompt) {
   auto state = std::make_shared<NimAnalysisState>();
 
   const std::string api_key =
@@ -140,11 +141,11 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
   const std::string model =
       !GetEnv("NVIDIA_NIM_MODEL").empty() ? GetEnv("NVIDIA_NIM_MODEL") : kDefaultModel;
 
-  std::thread([state, prompt, api_key, endpoint, model]() {
+  std::thread([state, system_prompt, conversation_prompt, api_key, endpoint, model]() {
     const auto id = g_request_counter.fetch_add(1);
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto base = std::filesystem::temp_directory_path() /
-                      std::format("fpsaimforge_nim_{}_{}", stamp, id);
+                      std::format("fpsaimforge_nim_chat_{}_{}", stamp, id);
     const auto payload_path = base.string() + ".json";
     const auto response_path = base.string() + ".response";
     const auto config_path = base.string() + ".curl";
@@ -153,10 +154,11 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
     {
       std::ofstream payload(payload_path);
       payload << "{\"model\":\"" << JsonEscape(model)
-              << "\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a precise "
-                 "FPS aim coach. Use only measured replay facts.\"},{\"role\":\"user\",\"content\":\""
-              << JsonEscape(prompt)
-              << "\"}],\"max_tokens\":1200,\"temperature\":0.2,\"stream\":false}";
+              << "\",\"messages\":[{\"role\":\"system\",\"content\":\""
+              << JsonEscape(system_prompt)
+              << "\"},{\"role\":\"user\",\"content\":\""
+              << JsonEscape(conversation_prompt)
+              << "\"}],\"max_tokens\":3000,\"temperature\":0.2,\"stream\":false}";
     }
     {
       std::ofstream config(config_path);
@@ -172,14 +174,12 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
     }
 
     const std::string command =
-        "curl --silent --show-error --fail --max-time 60 --config \"" +
+        "curl --silent --show-error --fail --max-time 120 --config \"" +
         config_path + "\"";
     const int exit_code = std::system(command.c_str());
 
     std::string response;
-    if (exit_code == 0) {
-      response = ReadBinaryFile(response_path);
-    }
+    if (exit_code == 0) response = ReadBinaryFile(response_path);
 
     std::filesystem::remove(payload_path, ec);
     std::filesystem::remove(config_path, ec);
@@ -189,7 +189,7 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
     state->done = true;
     if (exit_code != 0) {
       state->error =
-          "NVIDIA NIM request failed. Check the API key, endpoint, model, and network connection.";
+          "NVIDIA NIM request failed. Check the API key, model, endpoint, and network connection.";
       return;
     }
 
@@ -208,6 +208,12 @@ std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
   }).detach();
 
   return state;
+}
+
+std::shared_ptr<NimAnalysisState> StartNimAnalysis(const std::string& prompt) {
+  return StartNimChat(
+      "You are a precise FPS aim coach. Use only measured replay facts and do not invent events.",
+      prompt);
 }
 
 namespace {
