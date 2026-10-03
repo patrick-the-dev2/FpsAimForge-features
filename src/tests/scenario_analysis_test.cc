@@ -39,6 +39,7 @@ TEST(ScenarioAnalysisTest, BuildsCoachPromptFromMeasuredData) {
   ScenarioAnalysis analysis;
   analysis.scenario_name = "Prompt Test";
   analysis.deterministic_summary = "measured summary";
+  analysis.tracking_summary = "tracking losses: 2; average recovery 310 ms";
   analysis.timeline_summary = "0.20s MISS";
   analysis.findings.push_back(
       {AnalysisSeverity::WARNING, "Accuracy", "Miss discipline", "Measured miss detail", 0.2f});
@@ -48,6 +49,7 @@ TEST(ScenarioAnalysisTest, BuildsCoachPromptFromMeasuredData) {
   EXPECT_NE(prompt.find("AI Overview"), std::string::npos);
   EXPECT_NE(prompt.find("Weak Points"), std::string::npos);
   EXPECT_NE(prompt.find("Measured miss detail"), std::string::npos);
+  EXPECT_NE(prompt.find("tracking losses: 2"), std::string::npos);
 }
 
 }  // namespace
