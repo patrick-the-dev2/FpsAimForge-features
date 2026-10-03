@@ -4,6 +4,7 @@
 #include "aim/common/mat_icons.h"
 #include "aim/core/scenario_manager.h"
 #include "aim/graphics/textures.h"
+#include "aim/ui/ai_assistant_screen.h"
 #include "aim/ui/crosshair_editor_screen.h"
 #include "aim/ui/play_time_screen.h"
 #include "aim/ui/reaction_time_screen.h"
@@ -109,6 +110,9 @@ class TopBarImpl : public TopBar {
       // if (ImGui::Selectable(std::format("{} Settings", icons::kSettings).c_str())) {
       //   open_settings = true;
       // }
+      if (ImGui::Selectable(std::format("{} AI Coach", icons::kAutoAwesome).c_str(), false)) {
+        app_.PushNextScreen(CreateAiAssistantScreen());
+      }
       if (ImGui::Selectable(std::format("{} Themes", icons::kPalette).c_str(), false)) {
         app_.PushNextScreen(CreateThemeEditorScreen());
       }
