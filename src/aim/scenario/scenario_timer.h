@@ -43,7 +43,7 @@ class ScenarioTimer {
   }
 
   u16 GetReplayFps() {
-    return static_cast<u16>(replay_fps_);
+    return replay_fps_;
   }
 
   const Stopwatch& run_stopwatch() {
