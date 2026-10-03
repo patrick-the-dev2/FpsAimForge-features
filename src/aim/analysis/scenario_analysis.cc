@@ -67,9 +67,11 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   int above_5deg = 0;
   int loss_frames = 0;
   float loss_start_seconds = -1.0f;
-  float previous_target_speed = 0.0f;
   glm::vec3 previous_target_direction{};
   bool has_previous_target = false;
+  glm::vec3 previous_target_delta{};
+  int target_motion_samples = 0;
+  int target_direction_changes = 0;
 
   int miss_streak = 0;
   i64 last_click_time = -1;
@@ -233,25 +235,23 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
         result.largest_error_timestamp = frame_seconds;
       }
 
-      if (has_previous_target && nearest_target_id == nearest_target_id) {
-        const float target_delta =
+      if (has_previous_target) {
+        const glm::vec3 target_delta = nearest_direction - previous_target_direction;
+        const float target_delta_angle =
             ToDegrees(std::acos(std::clamp(glm::dot(previous_target_direction,
-                                                     nearest_direction),
-                                           -1.0f, 1.0f)));
-        const float target_speed = target_delta * replay.replay_fps;
-        target_speeds.push_back(target_speed);
-
-        if (target_speed > 0.5f &&
-            previous_target_speed > 0.5f &&
-            ((target_speed - previous_target_speed) *
-             (previous_target_speed - 0.0f) < 0.0f)) {
-          // Speed sign is not available from an unsigned angular distance.
-          // Direction reversals are detected below from camera-relative motion.
+                                                    nearest_direction),
+                                          -1.0f, 1.0f)));
+        target_speeds.push_back(target_delta_angle * replay.replay_fps);
+        if (glm::dot(target_delta, previous_target_delta) < -0.000001f) {
+          ++target_direction_changes;
+        }
+        if (glm::dot(target_delta, target_delta) > 0.00000001f) {
+          previous_target_delta = target_delta;
+          ++target_motion_samples;
         }
       }
 
       previous_target_direction = nearest_direction;
-      previous_target_speed = target_speeds.empty() ? 0.0f : target_speeds.back();
       has_previous_target = true;
     }
 
@@ -288,17 +288,23 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
           recovery_times_ms.size();
     }
 
+    if (target_motion_samples > 0) {
+      result.target_direction_change_rate =
+          100.0f * target_direction_changes / static_cast<float>(target_motion_samples);
+    }
+
     result.tracking_summary = std::format(
         "Tracking samples: {} ({:.1f}% of replay). Average target-relative error: {:.2f} deg. "
         "Worst error: {:.2f} deg at {}. Time above 1/2/5 deg: {:.1f}%/{:.1f}%/{:.1f}%. "
         "Tracking losses: {}, longest loss: {:.2f}s, average recovery: {:.0f} ms. "
-        "Target speed: {:.1f} deg/s average, {:.1f} deg/s peak.",
+        "Target speed: {:.1f} deg/s average, {:.1f} deg/s peak. Target direction changes: {:.1f}%.",
         tracking_samples, result.tracking_time_percent, result.average_tracking_error,
         result.worst_tracking_error, FormatTime(result.largest_error_timestamp),
         result.time_above_1deg_percent, result.time_above_2deg_percent,
         result.time_above_5deg_percent, result.tracking_loss_count,
         result.longest_loss_duration_seconds, result.average_recovery_time_ms,
-        result.average_target_speed, result.peak_target_speed);
+        result.average_target_speed, result.peak_target_speed,
+        result.target_direction_change_rate);
   }
 
   if (result.misses > 0) {
