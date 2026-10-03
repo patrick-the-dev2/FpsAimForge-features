@@ -33,9 +33,21 @@ struct ScenarioAnalysis {
   float peak_mouse_speed = 0;
   float high_speed_percent = 0;
   float direction_change_rate = 0;
+  float target_direction_change_rate = 0;
+  float average_target_speed = 0;
+  float peak_target_speed = 0;
+  float tracking_time_percent = 0;
+  float time_above_1deg_percent = 0;
+  float time_above_2deg_percent = 0;
+  float time_above_5deg_percent = 0;
+  float largest_error_timestamp = -1;
+  float longest_loss_duration_seconds = 0;
+  float average_recovery_time_ms = 0;
+  int tracking_loss_count = 0;
   bool has_target_snapshots = false;
   std::vector<AnalysisFinding> findings;
   std::string timeline_summary;
+  std::string tracking_summary;
   std::string deterministic_summary;
 };
 
