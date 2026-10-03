@@ -74,13 +74,26 @@ bool SaveRgbaPng(const std::filesystem::path& path,
     return false;
   }
 
+  // AI replay frames are deliberately downsampled before writing. A full 1920x1080 RGBA
+  // frame is over 8 MB even before base64 encoding, so keeping full-resolution frames for a
+  // 60-second replay would create an unnecessarily huge request on low-memory machines.
+  constexpr int kMaxCaptureWidth = 640;
+  constexpr int kMaxCaptureHeight = 360;
+  const int output_width = std::min(width, kMaxCaptureWidth);
+  const int output_height = std::min(height, kMaxCaptureHeight);
+
   std::vector<std::uint8_t> raw;
-  raw.reserve((static_cast<std::size_t>(width) * 4U + 1U) * static_cast<std::size_t>(height));
-  for (int y = 0; y < height; ++y) {
+  raw.reserve((static_cast<std::size_t>(output_width) * 4U + 1U) *
+              static_cast<std::size_t>(output_height));
+  for (int y = 0; y < output_height; ++y) {
     raw.push_back(0U);
-    const std::uint8_t* row = pixels + static_cast<std::size_t>(y) * pitch;
-    for (int x = 0; x < width; ++x) {
-      const std::uint8_t* pixel = row + static_cast<std::size_t>(x) * 4U;
+    const int source_y =
+        static_cast<int>((static_cast<std::int64_t>(y) * height) / output_height);
+    const std::uint8_t* row = pixels + static_cast<std::size_t>(source_y) * pitch;
+    for (int x = 0; x < output_width; ++x) {
+      const int source_x =
+          static_cast<int>((static_cast<std::int64_t>(x) * width) / output_width);
+      const std::uint8_t* pixel = row + static_cast<std::size_t>(source_x) * 4U;
       raw.push_back(pixel[bgra ? 2 : 0]);
       raw.push_back(pixel[1]);
       raw.push_back(pixel[bgra ? 0 : 2]);
@@ -91,8 +104,8 @@ bool SaveRgbaPng(const std::filesystem::path& path,
   std::vector<std::uint8_t> png = {0x89U, 0x50U, 0x4eU, 0x47U, 0x0dU, 0x0aU, 0x1aU, 0x0aU};
 
   std::vector<std::uint8_t> ihdr;
-  AppendPngUint32(ihdr, static_cast<std::uint32_t>(width));
-  AppendPngUint32(ihdr, static_cast<std::uint32_t>(height));
+  AppendPngUint32(ihdr, static_cast<std::uint32_t>(output_width));
+  AppendPngUint32(ihdr, static_cast<std::uint32_t>(output_height));
   ihdr.push_back(8U);
   ihdr.push_back(6U);
   ihdr.push_back(0U);
