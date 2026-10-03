@@ -46,7 +46,7 @@ class BaseScenario : public Scenario {
   void HandleClickHits(UpdateStateData* data);
   void HandlePokeHits(UpdateStateData* data);
   void HandlePokeInstantHits(UpdateStateData* data);
-  void HandleTrackingHits(UpdateStateData* data, std::vector<u16>* target_ids_to_remove);
+  void HandleTrackingHits(UpdateStateData* data);
   void HandleProximityTrackingHits(UpdateStateData* data);
   void AddNewTarget(u16 old_target_id, bool is_init = false);
   void TrackingHoldDone();
