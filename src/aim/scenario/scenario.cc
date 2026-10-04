@@ -9,6 +9,7 @@
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/ascii.h"
 #include "aim/common/imgui_ext.h"
+#include "aim/common/log.h"
 #include "aim/common/name_util.h"
 #include "aim/common/times.h"
 #include "aim/common/util.h"
