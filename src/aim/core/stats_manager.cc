@@ -17,13 +17,29 @@ class StatsManagerImpl : public StatsManager {
 
   void AddStats(const std::string& scenario_name, StatsDbRow* row) override {
     i64 scenario_id = db_->GetScenarioId(scenario_name);
-    db_->AddStats(scenario_id, row);
+    if (!db_->AddStats(scenario_id, row)) {
+      Logger::get()->warn("Failed to persist stats for {}", scenario_name);
+      return;
+    }
     stats_cache_.erase(scenario_id);
     latest_scenario_id_ = scenario_id;
     latest_run_id_ = row->stats_id;
-
-    // TODO: Invalidate more precisely
     highest_complete_level_cache_.clear();
+  }
+
+  bool AddStatsAndReplay(const std::string& scenario_name,
+                         StatsDbRow* row,
+                         const std::string& replay_data) override {
+    i64 scenario_id = db_->GetScenarioId(scenario_name);
+    if (!db_->AddStatsAndReplay(scenario_id, row, replay_data)) {
+      Logger::get()->warn("Failed to atomically persist stats + replay for {}", scenario_name);
+      return false;
+    }
+    stats_cache_.erase(scenario_id);
+    latest_scenario_id_ = scenario_id;
+    latest_run_id_ = row->stats_id;
+    highest_complete_level_cache_.clear();
+    return true;
   }
 
   std::vector<StatsDbRow> GetStats(const std::string& scenario_name) override {
@@ -63,53 +79,53 @@ class StatsManagerImpl : public StatsManager {
     stats_cache_.erase(scenario_id);
   }
 
-  bool GetStatsDetails(const std::string& scenario_name,
-                       i64 run_id,
-                       StatsDetails* details) override {
+    *details = {};
+
     auto all_stats = GetStats(scenario_name);
     details->all_stats.reserve(all_stats.size());
     details->scores.reserve(all_stats.size());
 
-    if (all_stats.size() == 0) {
+    if (all_stats.empty()) {
       return false;
     }
-
-    i64 now_micros = GetNowEpochMicros();
 
     int found_max_index = -1;
     float max_score = 0;
     bool found_stats = false;
     details->min_score = 1000000;
 
-    i64 average_mm_per_360 = 0;
-    float average_runs_count = 0;
-    for (int i = 0; i < all_stats.size(); ++i) {
+    double average_mm_per_360 = 0;
+    double average_cm_per_360 = 0;
+    double average_runs_count = 0;
+
+    for (int i = 0; i < static_cast<int>(all_stats.size()); ++i) {
       StatsDbRow& stats = all_stats[i];
       details->all_stats.push_back(stats);
       details->scores.push_back(stats.score);
 
-      if (stats.stats_id == run_id) {
+      if (!found_stats && stats.stats_id == run_id) {
         details->stats = stats;
         found_stats = true;
-        break;
+        continue;
       }
 
-      {
-        // Sum values for calculating the average. This will not include the current run.
+      if (!found_stats) {
         details->average_stats.score += stats.score;
-        // This will overflow if done directly with the mm_per_360 i16.
         average_mm_per_360 += stats.mm_per_360;
+        average_cm_per_360 +=
+            stats.cm_per_360 > 0 ? stats.cm_per_360 : stats.mm_per_360 / 10.0;
         StatsInfo& info = details->average_stats.info;
         info.set_num_hits(info.num_hits() + stats.info.num_hits());
         info.set_num_shots(info.num_shots() + stats.info.num_shots());
         average_runs_count++;
+
+        if (stats.score >= max_score && stats.score > 0) {
+          found_max_index = i;
+          max_score = stats.score;
+        }
       }
 
-      if (stats.score >= max_score && stats.score > 0) {
-        found_max_index = i;
-        max_score = stats.score;
-      }
-      if (stats.score < details->min_score) {
+      if (stats.score < details->min_score && stats.score > 0) {
         details->min_score = stats.score;
       }
     }
@@ -121,7 +137,9 @@ class StatsManagerImpl : public StatsManager {
                                                average_runs_count);
       details->average_stats.info.set_num_shots(details->average_stats.info.num_shots() /
                                                 average_runs_count);
-      details->average_stats.mm_per_360 = average_mm_per_360 / average_runs_count;
+      details->average_stats.mm_per_360 =
+          static_cast<i16>(average_mm_per_360 / average_runs_count);
+      details->average_stats.cm_per_360 = average_cm_per_360 / average_runs_count;
     }
 
     if (!found_stats) {

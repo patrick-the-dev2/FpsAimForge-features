@@ -39,6 +39,9 @@ class StatsManager {
   virtual ~StatsManager() {}
 
   virtual void AddStats(const std::string& scenario_name, StatsDbRow* row) = 0;
+  virtual bool AddStatsAndReplay(const std::string& scenario_name,
+                                 StatsDbRow* row,
+                                 const std::string& replay_data) = 0;
 
   virtual std::vector<StatsDbRow> GetStats(const std::string& scenario_name) = 0;
 

@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "aim/common/object_type.h"
@@ -90,6 +91,9 @@ class AimDb {
 
   // The stats_id and timestamp will be filled in after insert.
   virtual bool AddStats(i64 scenario_id, StatsDbRow* row) = 0;
+  virtual bool AddStatsAndReplay(i64 scenario_id,
+                                 StatsDbRow* row,
+                                 std::string_view replay_data) = 0;
   virtual std::vector<StatsDbRow> GetStats(i64 scenario_id) = 0;
   virtual i64 GetLatestStatsId(i64 scenario_id) = 0;
   virtual void CopyAllStats(i64 from_scenario_id, i64 to_scenario_id) = 0;
