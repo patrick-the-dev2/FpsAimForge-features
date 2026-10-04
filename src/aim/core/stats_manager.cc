@@ -4,6 +4,7 @@
 #include <memory>
 #include <tuple>
 
+#include "aim/common/log.h"
 #include "aim/common/times.h"
 #include "aim/common/util.h"
 #include "aim/core/playlist_manager.h"
