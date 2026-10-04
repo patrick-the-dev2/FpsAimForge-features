@@ -1,5 +1,7 @@
 #include "nim_client.h"
 
+#include "SDL3/SDL.h"  // IWYU pragma: keep
+
 #include <atomic>
 #ifdef _WIN32
 #include <windows.h>
@@ -419,7 +421,7 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysis(
                                              : kDefaultEndpoint;
   const std::string model = !GetEnv("NVIDIA_NIM_VIDEO_MODEL").empty()
                                 ? GetEnv("NVIDIA_NIM_VIDEO_MODEL")
-                                : "zai-org/glm-5.3-flash";
+                                : "google/diffusiongemma-26b-a4b-it";
 
   std::thread([state, prompt, video_path, api_key, endpoint, model]() {
     const auto id = g_request_counter.fetch_add(1);
@@ -503,6 +505,84 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysis(
         state->error = "NVIDIA NIM returned no video analysis content.";
       }
       if (!detail.empty()) state->error += " (" + detail + ")";
+    }
+  }).detach();
+
+  return state;
+}
+
+
+std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
+    const std::string& prompt, const std::vector<std::filesystem::path>& image_paths) {
+  auto state = std::make_shared<NimAnalysisState>();
+  if (image_paths.empty()) {
+    state->done = true;
+    state->error = "No replay frames were captured.";
+    return state;
+  }
+
+  std::thread([state, prompt, image_paths]() {
+    const auto id = g_request_counter.fetch_add(1);
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto base = std::filesystem::temp_directory_path() /
+                      std::format("fpsaimforge_replay_video_{}_{}", stamp, id);
+    const auto video_path = base.string() + ".mp4";
+    const auto log_path = base.string() + ".ffmpeg.log";
+    const auto parent = image_paths.front().parent_path();
+
+    std::filesystem::path ffmpeg_path;
+#ifdef _WIN32
+    if (const char* base_path = SDL_GetBasePath(); base_path != nullptr) {
+      ffmpeg_path = std::filesystem::path(base_path) / "ffmpeg.exe";
+      SDL_free(const_cast<char*>(base_path));
+    }
+    if (ffmpeg_path.empty() || !std::filesystem::exists(ffmpeg_path)) {
+      ffmpeg_path = "ffmpeg.exe";
+    }
+#else
+    ffmpeg_path = "ffmpeg";
+#endif
+
+    const std::string command =
+        "\"" + CurlConfigEscape(ffmpeg_path.string()) +
+        "\" -hide_banner -loglevel error -y -framerate 1 -i \"" +
+        CurlConfigEscape((parent / "frame_%04d.png").string()) +
+        "\" -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -movflags +faststart \"" +
+        CurlConfigEscape(video_path) + "\" > \"" + CurlConfigEscape(log_path) + "\" 2>&1";
+    const int exit_code = RunCommandNoWindow(command);
+    std::error_code ec;
+    std::filesystem::remove(log_path, ec);
+
+    if (exit_code != 0 || !std::filesystem::exists(video_path)) {
+      for (const auto& image_path : image_paths) {
+        std::filesystem::remove(image_path, ec);
+      }
+      std::lock_guard lock(state->mutex);
+      state->done = true;
+      state->error =
+          "The bundled FFmpeg encoder could not create the replay video. "
+          "The AI request was not sent.";
+      return;
+    }
+
+    auto video_state = StartNimVideoAnalysis(prompt, video_path);
+    while (true) {
+      {
+        std::lock_guard video_lock(video_state->mutex);
+        if (video_state->done) {
+          std::lock_guard lock(state->mutex);
+          state->done = true;
+          state->success = video_state->success;
+          state->response = video_state->response;
+          state->error = video_state->error;
+          break;
+        }
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    for (const auto& image_path : image_paths) {
+      std::filesystem::remove(image_path, ec);
     }
   }).detach();
 
