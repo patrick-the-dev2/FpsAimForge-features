@@ -4,6 +4,7 @@
 #include <cassert>
 #include <mutex>
 #include <optional>
+#include <sstream>
 
 #include "absl/cleanup/cleanup.h"
 #include "absl/time/time.h"
@@ -13,6 +14,7 @@
 #include "aim/common/name_util.h"
 #include "aim/common/proto_util.h"
 #include "aim/common/simple_types.h"
+#include "aim/common/times.h"
 #include "aim/common/util.h"
 #include "aim/analysis/nim_client.h"
 #include "aim/analysis/scenario_analysis.h"
