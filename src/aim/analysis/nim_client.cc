@@ -532,7 +532,7 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
 
     std::filesystem::path ffmpeg_path;
 #ifdef _WIN32
-    if (char* base_path = SDL_GetBasePath(); base_path != nullptr) {
+    if (const char* base_path = SDL_GetBasePath(); base_path != nullptr) {
       ffmpeg_path = std::filesystem::path(base_path) / "ffmpeg.exe";
       SDL_free(base_path);
     }
