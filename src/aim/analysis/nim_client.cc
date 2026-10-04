@@ -406,4 +406,107 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
   return state;
 }
 
+
+std::shared_ptr<NimAnalysisState> StartNimVideoAnalysis(
+    const std::string& prompt, const std::filesystem::path& video_path) {
+  auto state = std::make_shared<NimAnalysisState>();
+
+  const std::string api_key =
+      !GetEnv("NVIDIA_NIM_API_KEY").empty() ? GetEnv("NVIDIA_NIM_API_KEY")
+                                            : GetEnv("NVIDIA_API_KEY");
+  const std::string endpoint =
+      !GetEnv("NVIDIA_NIM_ENDPOINT").empty() ? GetEnv("NVIDIA_NIM_ENDPOINT")
+                                             : kDefaultEndpoint;
+  const std::string model = !GetEnv("NVIDIA_NIM_VIDEO_MODEL").empty()
+                                ? GetEnv("NVIDIA_NIM_VIDEO_MODEL")
+                                : "zai-org/glm-5.3-flash";
+
+  std::thread([state, prompt, video_path, api_key, endpoint, model]() {
+    const auto id = g_request_counter.fetch_add(1);
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto base = std::filesystem::temp_directory_path() /
+                      std::format("fpsaimforge_nim_video_{}_{}", stamp, id);
+    const auto payload_path = base.string() + ".json";
+    const auto response_path = base.string() + ".response";
+    const auto config_path = base.string() + ".curl";
+    std::error_code ec;
+
+    const std::string bytes = ReadBinaryFile(video_path);
+    constexpr std::size_t kMaxVideoBytes = 45U * 1024U * 1024U;
+    if (bytes.empty() || bytes.size() > kMaxVideoBytes) {
+      std::lock_guard lock(state->mutex);
+      state->done = true;
+      state->error = "Replay video could not be read or is larger than 45 MB.";
+      return;
+    }
+
+    const std::string encoded = Base64Encode(bytes);
+    {
+      std::ofstream payload(payload_path, std::ios::binary);
+      payload << "{\"model\":\"" << JsonEscape(model)
+              << "\",\"messages\":[{\"role\":\"user\",\"content\":["
+                 "{\"type\":\"text\",\"text\":\""
+              << JsonEscape(
+                     "You are an FPS aim coach. Watch the entire replay video chronologically. "
+                     "Do not invent events. Identify exact weak points, failures, recoveries, "
+                     "crosshair behavior, target acquisition and tracking mistakes. " +
+                     prompt)
+              << "\"},{\"type\":\"video_url\",\"video_url\":{\"url\":\"data:video/mp4;base64,"
+              << encoded << "\"}}]}],\"max_tokens\":2200,\"temperature\":0.2,\"stream\":false}";
+    }
+
+    {
+      std::ofstream config(config_path);
+      config << "url = \"" << CurlConfigEscape(endpoint) << "\"\n";
+      config << "request = \"POST\"\n";
+      config << "header = \"Accept: application/json\"\n";
+      config << "header = \"Content-Type: application/json\"\n";
+      if (!api_key.empty()) {
+        config << "header = \"Authorization: Bearer " << CurlConfigEscape(api_key) << "\"\n";
+      }
+      config << "data-binary = \"@" << CurlConfigEscape(payload_path) << "\"\n";
+      config << "output = \"" << CurlConfigEscape(response_path) << "\"\n";
+    }
+
+    const std::string command =
+        "curl --silent --show-error --fail --max-time 240 --config \"" +
+        config_path + "\"";
+    const int exit_code = RunCommandNoWindow(command);
+
+    std::string response;
+    if (exit_code == 0) {
+      response = ReadBinaryFile(response_path);
+    }
+
+    std::filesystem::remove(payload_path, ec);
+    std::filesystem::remove(config_path, ec);
+    std::filesystem::remove(response_path, ec);
+    std::filesystem::remove(video_path, ec);
+
+    std::lock_guard lock(state->mutex);
+    state->done = true;
+    if (exit_code != 0) {
+      state->error =
+          "NVIDIA NIM video request failed. Check the video model, API key, endpoint, "
+          "request size, and network connection.";
+      return;
+    }
+
+    state->response = ExtractJsonString(response, "content");
+    state->success = !state->response.empty();
+    if (!state->success) {
+      const std::string api_error = ExtractJsonString(response, "message");
+      const std::string detail = ExtractJsonString(response, "detail");
+      if (!api_error.empty()) {
+        state->error = "NVIDIA NIM rejected the video request: " + api_error;
+      } else {
+        state->error = "NVIDIA NIM returned no video analysis content.";
+      }
+      if (!detail.empty()) state->error += " (" + detail + ")";
+    }
+  }).detach();
+
+  return state;
+}
+
 }  // namespace aim
