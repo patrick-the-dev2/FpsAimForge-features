@@ -102,8 +102,8 @@ class AiAssistantScreen : public UiScreen {
       if (request_->success) {
         const std::string response = request_->response;
         messages_.push_back({false, response});
-        SaveMemory();
         ExecuteAction(response);
+        SaveMemory();
       } else {
         messages_.push_back({false, "AI request failed: " + request_->error});
         SaveMemory();
