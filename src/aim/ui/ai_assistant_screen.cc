@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <format>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -76,11 +77,15 @@ std::string ExtractJsonObject(const std::string& text, const std::string& prefix
 class AiAssistantScreen : public UiScreen {
  public:
   AiAssistantScreen() {
-    messages_.push_back({false,
-                         "I have access to your scenarios, playlists, statistics, settings, "
-                         "replay/analysis features, and writable bundles. I can also create "
-                         "scenarios and playlists. Try: build me a 20-minute tracking playlist "
-                         "from my weakest scenarios."});
+    LoadMemory();
+    if (messages_.empty()) {
+      messages_.push_back({false,
+                           "I have access to your scenarios, playlists, statistics, settings, "
+                           "replay/analysis features, and writable bundles. I can also create "
+                           "scenarios and playlists. Try: build me a 20-minute tracking playlist "
+                           "from my weakest scenarios."});
+      SaveMemory();
+    }
   }
 
  protected:
@@ -97,21 +102,114 @@ class AiAssistantScreen : public UiScreen {
       if (request_->success) {
         const std::string response = request_->response;
         messages_.push_back({false, response});
+        SaveMemory();
         ExecuteAction(response);
       } else {
         messages_.push_back({false, "AI request failed: " + request_->error});
+        SaveMemory();
       }
       request_.reset();
     }
   }
 
  private:
+
+  std::filesystem::path MemoryPath() const {
+    return app_.file_system().GetUserDataPath("ai_coach_memory.bin");
+  }
+
+  void LoadMemory() {
+    const auto path = MemoryPath();
+    std::ifstream input(path, std::ios::binary);
+    if (!input) return;
+    std::string magic;
+    std::getline(input, magic);
+    if (magic != "FPSAIMFORGE_AI_CHAT_V1") return;
+    while (input.good()) {
+      char role = 0;
+      input.get(role);
+      if (!input || role != 'U' && role != 'A') break;
+      if (input.peek() != ' ') break;
+      input.get();
+      std::string size_text;
+      std::getline(input, size_text);
+      if (size_text.empty()) break;
+      size_t size = 0;
+      try {
+        size = std::stoull(size_text);
+      } catch (...) {
+        break;
+      }
+      std::string text(size, '\0');
+      input.read(text.data(), static_cast<std::streamsize>(size));
+      if (input.gcount() != static_cast<std::streamsize>(size)) break;
+      if (input.peek() == '\n') input.get();
+      messages_.push_back({role == 'U', std::move(text)});
+    }
+  }
+
+  void SaveMemory() {
+    const auto path = MemoryPath();
+    CreateDirectories(path.parent_path());
+    const auto temp = path.string() + ".tmp";
+    std::ofstream output(temp, std::ios::binary | std::ios::trunc);
+    if (!output) return;
+    output << "FPSAIMFORGE_AI_CHAT_V1\n";
+    for (const auto& message : messages_) {
+      output << (message.user ? 'U' : 'A') << ' ' << message.text.size() << '\n';
+      output.write(message.text.data(), static_cast<std::streamsize>(message.text.size()));
+      output << '\n';
+    }
+    output.close();
+    std::error_code ec;
+    std::filesystem::rename(temp, path, ec);
+    if (ec) {
+      std::filesystem::remove(path, ec);
+      std::filesystem::rename(temp, path, ec);
+    }
+  }
+
   void DrawContent() {
     const float char_x = ImGui::GetFontSize();
 
     ImGui::Text("AI Coach");
     ImGui::SameLine();
     ImGui::TextDisabled("NVIDIA NIM");
+    ImGui::SameLine();
+    if (ImGui::Button("Chat")) {
+      ImGui::OpenPopup("AiCoachChatMenu");
+    }
+    if (ImGui::BeginPopup("AiCoachChatMenu")) {
+      if (ImGui::MenuItem("New chat")) {
+        messages_.clear();
+        SaveMemory();
+        messages_.push_back({false, "New chat started. Your local app statistics and capabilities are available to me."});
+        SaveMemory();
+      }
+      if (ImGui::MenuItem("Memory")) {
+        ImGui::OpenPopup("AiCoachMemory");
+      }
+      if (ImGui::MenuItem("Clear saved memory")) {
+        messages_.clear();
+        SaveMemory();
+        messages_.push_back({false, "Saved chat memory cleared."});
+        SaveMemory();
+      }
+      ImGui::EndPopup();
+    }
+    if (ImGui::BeginPopup("AiCoachMemory")) {
+      const auto memory_path = app_.file_system().GetUserDataPath("ai_coach_memory.bin");
+      ImGui::TextWrapped("Persistent AI chat memory is stored locally on this PC:");
+      ImGui::TextWrapped("%s", memory_path.string().c_str());
+      ImGui::Separator();
+      ImGui::TextWrapped("This stores the conversation history. Live scenarios, playlists and statistics are read from the app each time you send a message.");
+      if (ImGui::Button("Open memory folder")) {
+        OpenFolderInExplorer(memory_path.parent_path());
+      }
+      ImGui::EndPopup();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Local memory");
     ImGui::Separator();
 
     if (!IsNimConfigured()) {
@@ -251,6 +349,7 @@ class AiAssistantScreen : public UiScreen {
     const std::string user_text = input_;
     input_.clear();
     messages_.push_back({true, user_text});
+    SaveMemory();
 
     std::string conversation;
     const size_t begin = messages_.size() > 12 ? messages_.size() - 12 : 0;
