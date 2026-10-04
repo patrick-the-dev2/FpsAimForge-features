@@ -623,7 +623,7 @@ class ApplicationImpl : public Application {
       return maybe_error;
     }
     local_store_ = std::make_unique<LocalStore>(file_system_.get());
-    replay_manager_ = CreateReplayManager();
+    replay_manager_ = CreateReplayManager(db_.get());
 
     play_time_manager_ = std::make_unique<PlayTimeManager>(db_.get());
     bundle_manager_ = CreateBundleManager(

@@ -1,11 +1,14 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <vector>
 
 #include "aim/scenario/replay.h"
 
 namespace aim {
+
+struct StatsDbRow;
 
 enum class AnalysisSeverity { INFO, WARNING, CRITICAL };
 
@@ -21,6 +24,7 @@ struct ScenarioAnalysis {
   std::string scenario_name;
   float duration_seconds = 0;
   float score = 0;
+  float cm_per_360 = 0;
   int clicks = 0;
   int hits = 0;
   int misses = 0;
@@ -54,5 +58,7 @@ struct ScenarioAnalysis {
 ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay);
 std::string AnalysisSeverityLabel(AnalysisSeverity severity);
 std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis);
+std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis,
+                                   std::span<const StatsDbRow> history);
 
 }  // namespace aim

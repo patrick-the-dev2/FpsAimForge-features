@@ -1,6 +1,7 @@
 #include "scenario_analysis.h"
 
 #include <algorithm>
+#include <absl/time/time.h>
 #include <cmath>
 #include <format>
 #include <limits>
@@ -10,6 +11,7 @@
 #include <utility>
 
 #include "aim/common/geometry.h"
+#include "aim/database/aim_db.h"
 #include "aim/common/util.h"
 #include "aim/core/camera.h"
 
@@ -53,6 +55,7 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   ScenarioAnalysis result;
   result.scenario_name = replay.scenario_name;
   result.duration_seconds = replay.GetDurationSeconds();
+  result.cm_per_360 = replay.cm_per_360;
   result.has_target_snapshots = !replay.target_data.empty();
   if (!replay.scores.empty()) result.score = replay.scores.back();
 
@@ -415,46 +418,86 @@ ScenarioAnalysis AnalyzeScenarioReplay(const Replay& replay) {
   result.timeline_summary = timeline.str();
 
   result.deterministic_summary = std::format(
-      "Scenario '{}': {:.1f}s, score {:.2f}, {} hits / {} misses / {} clicks, {:.1f}% accuracy. "
-      "Average click interval {:.0f} ms. Average mouse speed {:.1f} deg/s, peak {:.1f} deg/s. "
-      "High-speed movement {:.1f}%. Direction-change rate {:.1f}%. {}",
-      result.scenario_name, result.duration_seconds, result.score, result.hits, result.misses,
-      result.clicks, result.accuracy_percent, result.average_click_interval_ms,
-      result.average_mouse_speed, result.peak_mouse_speed, result.high_speed_percent,
-      result.direction_change_rate,
-      result.tracking_summary);
+      "Scenario '{}': {:.1f}s, score {:.2f}, cm/360 {:.3f}, {} hits / {} misses / {} clicks, "
+      "{:.1f}% accuracy. Average click interval {:.0f} ms. Average mouse speed {:.1f} deg/s, "
+      "peak {:.1f} deg/s. High-speed movement {:.1f}%. Direction-change rate {:.1f}%. {}",
+      result.scenario_name, result.duration_seconds, result.score, result.cm_per_360,
+      result.hits, result.misses, result.clicks, result.accuracy_percent,
+      result.average_click_interval_ms, result.average_mouse_speed, result.peak_mouse_speed,
+      result.high_speed_percent, result.direction_change_rate, result.tracking_summary);
 
   return result;
 }
 
+namespace {
+
+std::string FormatHistoryCm360(const StatsDbRow& row) {
+  const double value = row.cm_per_360 > 0 ? row.cm_per_360 : row.mm_per_360 / 10.0;
+  return std::format("{:.3f}", value);
+}
+
+std::string FormatHistoryRow(const StatsDbRow& row) {
+  const double shots = row.info.num_shots();
+  const double hits = row.info.num_hits();
+  const double accuracy = shots > 0 ? 100.0 * hits / shots : 0.0;
+  const std::string timestamp =
+      absl::FormatTime("%Y-%m-%d %H:%M:%S UTC",
+                       absl::FromTimeT(row.epoch_seconds),
+                       absl::UTCTimeZone());
+  return std::format(
+      "run={} | date={} | score={:.3f} | cm/360={} | hits={:.1f} | shots={:.1f} | accuracy={:.2f}%",
+      row.stats_id, timestamp, row.score, FormatHistoryCm360(row), hits, shots, accuracy);
+}
+
+}  // namespace
+
 std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis) {
+  return BuildNimAnalysisPrompt(analysis, std::span<const StatsDbRow>{});
+}
+
+std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis,
+                                   std::span<const StatsDbRow> history) {
   std::ostringstream prompt;
   prompt << "You are an FPS aim coach reviewing one completed aim-trainer scenario. "
             "Use only the supplied replay-derived facts. Do not invent events or claim visual "
-            "information that is not present. Give a practical diagnostic.\\n\\n";
-  prompt << "Scenario details:\\n" << analysis.deterministic_summary << "\\n";
-  prompt << "Target snapshots: " << (analysis.has_target_snapshots ? "available" : "not available")
-         << "\\n";
-  prompt << "Tracking diagnostics: " << analysis.tracking_summary << "\\n";
-  prompt << "Replay timeline sample: " << analysis.timeline_summary << "\\n\\n";
-  prompt << "Detected findings:\\n";
+            "information that is not present. Give a practical diagnostic.\n\n";
+  prompt << "Current run:\n" << analysis.deterministic_summary << "\n";
+  prompt << "Exact cm/360: " << std::format("{:.3f}", analysis.cm_per_360) << "\n";
+  prompt << "Target snapshots: "
+         << (analysis.has_target_snapshots ? "available" : "not available") << "\n";
+  prompt << "Tracking diagnostics:\n" << analysis.tracking_summary << "\n";
+  prompt << "Replay timeline sample:\n" << analysis.timeline_summary << "\n\n";
+
+  prompt << "Persisted run history (latest 20 runs):\n";
+  if (history.empty()) {
+    prompt << "No persisted run history was supplied.\n";
+  } else {
+    const size_t start = history.size() > 20 ? history.size() - 20 : 0;
+    for (size_t i = start; i < history.size(); ++i) {
+      prompt << "- " << FormatHistoryRow(history[i]) << "\n";
+    }
+  }
+
+  prompt << "\nDetected findings:\n";
   for (const auto& finding : analysis.findings) {
     prompt << "- [" << AnalysisSeverityLabel(finding.severity) << "] "
            << finding.category << ": " << finding.title << " - " << finding.detail;
     if (finding.timestamp_seconds >= 0) {
       prompt << " (around " << FormatTime(finding.timestamp_seconds) << ")";
     }
-    prompt << "\\n";
+    prompt << "\n";
   }
-  prompt << "\\nReturn these headings exactly:\\n"
-            "AI Overview\\n"
-            "What Happened\\n"
-            "Weak Points\\n"
-            "Where It Failed\\n"
-            "What To Practice Next\\n"
-            "Replay Review\\n"
-            "Keep advice specific to the measured run and state uncertainty where appropriate.";
+  prompt << "\nReturn these headings exactly:\n"
+            "AI Overview\n"
+            "What Happened\n"
+            "Weak Points\n"
+            "Where It Failed\n"
+            "What To Practice Next\n"
+            "Replay Review\n"
+            "Keep advice specific to the measured run and compare against history when useful. "
+            "Never infer a cm/360 that is not explicitly provided.";
   return prompt.str();
+}
 }
 
 }  // namespace aim

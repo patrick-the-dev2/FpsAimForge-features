@@ -37,6 +37,7 @@ auto EqualsStats(const StatsDbRow& expected) {
                Field(&StatsDbRow::epoch_seconds, Eq(expected.epoch_seconds)),
                Field(&StatsDbRow::score, Eq(expected.score)),
                Field(&StatsDbRow::mm_per_360, Eq(expected.mm_per_360)),
+               Field(&StatsDbRow::cm_per_360, Eq(expected.cm_per_360)),
                Field(&StatsDbRow::info, EqualsProto(expected.info)));
 }
 
@@ -280,6 +281,7 @@ TEST_F(AimDbTest, ReadAndWriteStats) {
 
   StatsDbRow stats1_1;
   stats1_1.mm_per_360 = 350;
+  stats1_1.cm_per_360 = 35.123;
   stats1_1.score = 9.9;
   stats1_1.info.set_num_hits(10);
   ASSERT_TRUE(db_->AddStats(scenario1, &stats1_1));
@@ -320,6 +322,23 @@ TEST_F(AimDbTest, ReadAndWriteStats) {
 
   ASSERT_THAT(db_->GetStats(scenario1), ElementsAre(EqualsStats(stats1_1)));
   EXPECT_THAT(db_->GetLatestStatsId(scenario1), Eq(stats1_1.stats_id));
+}
+
+TEST_F(AimDbTest, ReplayPersistence) {
+  const i64 scenario_id = db_->GetScenarioId("Replay Scenario");
+  StatsDbRow stats;
+  stats.score = 123.45;
+  stats.mm_per_360 = 400;
+  stats.cm_per_360 = 40.125;
+  ASSERT_TRUE(db_->AddStats(scenario_id, &stats));
+  ASSERT_GT(stats.stats_id, 0);
+
+  const std::string replay_data = "FPSAIMFORGE_TEST_REPLAY_DATA";
+  ASSERT_TRUE(db_->AddReplay(stats.stats_id, replay_data));
+  EXPECT_EQ(db_->GetReplay(stats.stats_id), replay_data);
+
+  db_->DeleteStats(scenario_id, stats.stats_id);
+  EXPECT_TRUE(db_->GetReplay(stats.stats_id).empty());
 }
 
 TEST_F(AimDbTest, PlayTime) {

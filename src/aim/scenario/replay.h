@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -63,6 +65,7 @@ struct Replay {
   std::vector<PitchYaw> pitch_yaws;
   std::vector<ReplayTargetMetadata> target_metadata;
   std::vector<float> scores;
+  float cm_per_360 = 0;
 
   float GetApproximateSizeMb() const;
   float GetDurationSeconds() const;
@@ -101,5 +104,10 @@ class ReplayRecorder {
   std::unordered_map<u16, u16> target_data_channel_map_;
   std::shared_ptr<Replay> replay_;
 };
+
+// Versioned persistence format used by AimDb.
+std::string SerializeReplay(const Replay& replay);
+std::shared_ptr<Replay> DeserializeReplay(std::string_view data);
+
 
 }  // namespace aim

@@ -779,7 +779,7 @@ class StatsScreen : public UiScreen {
       if (IsNimConfigured()) {
         if (ImGui::Button("Watch Full Scenario with AI")) {
           visual_capture_state_ = std::make_shared<VisualReplayCaptureState>();
-          visual_capture_state_->prompt = BuildNimAnalysisPrompt(*analysis_);
+          visual_capture_state_->prompt = BuildNimAnalysisPrompt(*analysis_, details_.all_stats);
           PushNextScreen(
               CreateReplayViewerScreen(replay_, &app_, visual_capture_state_));
         }
@@ -848,7 +848,7 @@ class StatsScreen : public UiScreen {
         row.stats_id = stats.stats_id;
         row.run_number = run_number;
         row.score = stats.score;
-        row.cm_per_360 = stats.mm_per_360 / 10.0f;
+        row.cm_per_360 = stats.cm_per_360 > 0 ? stats.cm_per_360 : stats.mm_per_360 / 10.0f;
 
         i64 time_micros = stats.epoch_seconds * 1000000;
         if (time_micros > 0) {

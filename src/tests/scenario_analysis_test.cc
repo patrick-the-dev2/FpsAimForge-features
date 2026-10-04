@@ -1,4 +1,5 @@
 #include "aim/analysis/scenario_analysis.h"
+#include "aim/database/aim_db.h"
 
 #include "gtest/gtest.h"
 
@@ -71,6 +72,32 @@ TEST(ScenarioAnalysisTest, ReportsContinuousTrackingLosses) {
   EXPECT_GT(analysis.longest_loss_duration_seconds, 0.0f);
   EXPECT_GT(analysis.largest_error_timestamp, 0.0f);
   EXPECT_NE(analysis.tracking_summary.find("Tracking losses"), std::string::npos);
+}
+
+TEST(ScenarioAnalysisTest, IncludesPersistedRunHistory) {
+  ScenarioAnalysis analysis;
+  analysis.deterministic_summary = "current measured run";
+  analysis.cm_per_360 = 15.625f;
+  analysis.tracking_summary = "measured tracking";
+  analysis.timeline_summary = "0.25s HIT";
+
+  StatsDbRow history_row;
+  history_row.stats_id = 42;
+  history_row.epoch_seconds = 0;
+  history_row.score = 275.125;
+  history_row.cm_per_360 = 31.375;
+  history_row.info.set_num_hits(3);
+  history_row.info.set_num_shots(4);
+
+  const std::vector<StatsDbRow> history{history_row};
+  const std::string prompt = BuildNimAnalysisPrompt(analysis, history);
+
+  EXPECT_NE(prompt.find("run=42"), std::string::npos);
+  EXPECT_NE(prompt.find("1970-01-01 00:00:00 UTC"), std::string::npos);
+  EXPECT_NE(prompt.find("score=275.125"), std::string::npos);
+  EXPECT_NE(prompt.find("cm/360=31.375"), std::string::npos);
+  EXPECT_NE(prompt.find("accuracy=75.00%"), std::string::npos);
+  EXPECT_NE(prompt.find("Exact cm/360: 15.625"), std::string::npos);
 }
 
 TEST(ScenarioAnalysisTest, BuildsCoachPromptFromMeasuredData) {

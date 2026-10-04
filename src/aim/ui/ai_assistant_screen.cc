@@ -1,11 +1,13 @@
 #include "ai_assistant_screen.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <string>
 #include <vector>
 
+#include "absl/time/time.h"
 #include "aim/analysis/nim_client.h"
 #include "aim/common/files.h"
 #include "aim/common/mat_icons.h"
@@ -270,18 +272,34 @@ class AiAssistantScreen : public UiScreen {
     if (scenario_names) {
       for (const auto& name : *scenario_names) {
         auto aggregate = app_.stats_manager().GetAggregateStats(name);
-        context += std::format("  {} | runs={} | high_score={:.3f} | last_score={:.3f} | high_cm360={}\n",
+        const double high_cm =
+            aggregate.high_score_stats.cm_per_360 > 0
+                ? aggregate.high_score_stats.cm_per_360
+                : aggregate.high_score_stats.mm_per_360 / 10.0;
+        context += std::format("  {} | runs={} | high_score={:.3f} | last_score={:.3f} | high_cm360={:.3f}\n",
                                name,
                                aggregate.total_runs,
                                aggregate.high_score_stats.score,
                                aggregate.last_run_stats.score,
-                               aggregate.high_score_stats.mm_per_360);
+                               high_cm);
         if (user_text.find(name) != std::string::npos) {
           auto full_stats = app_.stats_manager().GetStats(name);
           context += std::format("    RAW STATS FOR REQUESTED SCENARIO ({} rows):\n", full_stats.size());
-          for (const auto& row : full_stats) {
-            context += std::format("      run={} epoch={} score={:.3f} cm360={}\n",
-                                   row.stats_id, row.epoch_seconds, row.score, row.mm_per_360);
+          const size_t start = full_stats.size() > 50 ? full_stats.size() - 50 : 0;
+          for (size_t i = start; i < full_stats.size(); ++i) {
+            const auto& row = full_stats[i];
+            const double cm =
+                row.cm_per_360 > 0 ? row.cm_per_360 : row.mm_per_360 / 10.0;
+            const std::string date =
+                absl::FormatTime("%Y-%m-%d %H:%M:%S UTC",
+                                 absl::FromTimeT(row.epoch_seconds),
+                                 absl::UTCTimeZone());
+            const double shots = row.info.num_shots();
+            const double hits = row.info.num_hits();
+            const double accuracy = shots > 0 ? 100.0 * hits / shots : 0.0;
+            context += std::format(
+                "      run={} date={} score={:.3f} cm360={:.3f} hits={:.1f} shots={:.1f} accuracy={:.2f}%\n",
+                row.stats_id, date, row.score, cm, hits, shots, accuracy);
           }
         }
       }
@@ -305,9 +323,21 @@ class AiAssistantScreen : public UiScreen {
     if (!current.empty()) {
       auto stats = app_.stats_manager().GetStats(current);
       context += std::format("Full raw stats for current scenario {} ({} runs):\n", current, stats.size());
-      for (const auto& row : stats) {
-        context += std::format("  run={} epoch={} score={:.3f} cm360={}\n",
-                               row.stats_id, row.epoch_seconds, row.score, row.mm_per_360);
+      const size_t start = stats.size() > 50 ? stats.size() - 50 : 0;
+      for (size_t i = start; i < stats.size(); ++i) {
+        const auto& row = stats[i];
+        const double cm =
+            row.cm_per_360 > 0 ? row.cm_per_360 : row.mm_per_360 / 10.0;
+        const std::string date =
+            absl::FormatTime("%Y-%m-%d %H:%M:%S UTC",
+                             absl::FromTimeT(row.epoch_seconds),
+                             absl::UTCTimeZone());
+        const double shots = row.info.num_shots();
+        const double hits = row.info.num_hits();
+        const double accuracy = shots > 0 ? 100.0 * hits / shots : 0.0;
+        context += std::format(
+            "  run={} date={} score={:.3f} cm360={:.3f} hits={:.1f} shots={:.1f} accuracy={:.2f}%\n",
+            row.stats_id, date, row.score, cm, hits, shots, accuracy);
       }
     }
 

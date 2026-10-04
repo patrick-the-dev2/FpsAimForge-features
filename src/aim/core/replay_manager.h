@@ -6,6 +6,7 @@
 
 namespace aim {
 
+class AimDb;
 struct Replay;
 
 class ReplayManager {
@@ -16,6 +17,6 @@ class ReplayManager {
   virtual void AddReplay(i64 run_id, std::shared_ptr<Replay> replay) = 0;
 };
 
-std::unique_ptr<ReplayManager> CreateReplayManager();
+std::unique_ptr<ReplayManager> CreateReplayManager(AimDb* db);
 
 }  // namespace aim

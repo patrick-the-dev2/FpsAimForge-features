@@ -15,6 +15,7 @@ set(TEST_SOURCES
   "util_test.cc"
   "collections_test.cc"
   "scenario_analysis_test.cc"
+  "replay_test.cc"
 )
 
 # Add the test executable

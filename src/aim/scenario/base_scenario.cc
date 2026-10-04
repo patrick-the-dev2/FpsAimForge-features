@@ -656,6 +656,7 @@ std::optional<StatsDbRow> BaseScenario::GetStatsRow() {
   }
 
   StatsDbRow stats_row;
+  stats_row.cm_per_360 = effective_cm_per_360_;
   stats_row.mm_per_360 = effective_cm_per_360_ * 10;
   if (num_hits > 0) {
     stats_row.info.set_num_hits(num_hits);

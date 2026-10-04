@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS Stats (
     TimestampSeconds INTEGER NOT NULL,
     Score REAL NOT NULL,
     MmPer360 INTEGER NOT NULL,
+    CmPer360 REAL NOT NULL DEFAULT -1,
     Info BLOB,
     FOREIGN KEY (ScenarioId) REFERENCES Scenarios(ScenarioId)
 );
@@ -150,8 +151,9 @@ INSERT INTO Stats (
   TimestampSeconds,
   Score,
   MmPer360,
+  CmPer360,
   Info)
-VALUES (NULL, ?, ?, ?, ?, ?);
+VALUES (NULL, ?, ?, ?, ?, ?, ?);
 )AIMS";
 
 const char* kGetStatsSql = R"AIMS(
@@ -160,6 +162,7 @@ SELECT
   TimestampSeconds,
   Score,
   MmPer360,
+  CmPer360,
   Info
 FROM Stats
 WHERE ScenarioId = ?
@@ -180,6 +183,31 @@ DELETE FROM Stats WHERE ScenarioId = ? AND StatsId = ?;
 const char* kDeleteAllStatsForScenarioSql = R"AIMS(
 DELETE FROM Stats WHERE ScenarioId = ?;
 )AIMS";
+
+const char* kCreateReplaysTable = R"AIMS(
+CREATE TABLE IF NOT EXISTS Replays (
+    RunId INTEGER PRIMARY KEY,
+    ReplayData BLOB NOT NULL
+);
+)AIMS";
+
+const char* kAddReplaySql = R"AIMS(
+INSERT OR REPLACE INTO Replays (RunId, ReplayData) VALUES (?, ?);
+)AIMS";
+
+const char* kGetReplaySql = R"AIMS(
+SELECT ReplayData FROM Replays WHERE RunId = ?;
+)AIMS";
+
+const char* kDeleteReplaySql = R"AIMS(
+DELETE FROM Replays WHERE RunId = ?;
+)AIMS";
+
+const char* kDeleteReplaysForScenarioSql = R"AIMS(
+DELETE FROM Replays
+WHERE RunId IN (SELECT StatsId FROM Stats WHERE ScenarioId = ?);
+)AIMS";
+
 
 // Used to apply labels like "starred"
 const char* kCreateLabeledItemsTable = R"AIMS(
@@ -329,6 +357,19 @@ ORDER BY RecentIdViews.TimestampMicros DESC
 LIMIT ?;
 )AIMS";
 
+bool HasTableColumn(sqlite3* db, const char* table, const char* column) {
+  const std::string sql = std::format("PRAGMA table_info({})", table);
+  sqlite3_stmt* stmt = nullptr;
+  if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) return false;
+  bool found = false;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    const unsigned char* name = sqlite3_column_text(stmt, 1);
+    if (name != nullptr && column == reinterpret_cast<const char*>(name)) { found = true; break; }
+  }
+  sqlite3_finalize(stmt);
+  return found;
+}
+
 class AimDbImpl;
 using GetIdFn = i64 (AimDbImpl::*)(const std::string& name);
 using RenameSingleItemFn = i64 (AimDbImpl::*)(const std::string& old_name,
@@ -371,6 +412,15 @@ class AimDbImpl : public AimDb {
       initialization_error_ = error_message;
     }
     if (!ExecuteSqliteQuery(db_, kCreateStatsTable, &error_message)) {
+      initialization_error_ = error_message;
+    }
+    if (!HasTableColumn(db_, "Stats", "CmPer360")) {
+      if (!ExecuteSqliteQuery(
+              db_, "ALTER TABLE Stats ADD COLUMN CmPer360 REAL NOT NULL DEFAULT -1;", &error_message)) {
+        initialization_error_ = error_message;
+      }
+    }
+    if (!ExecuteSqliteQuery(db_, kCreateReplaysTable, &error_message)) {
       initialization_error_ = error_message;
     }
     if (!ExecuteSqliteQuery(db_, kCreatePlayTimeTable, &error_message)) {
@@ -666,9 +716,11 @@ class AimDbImpl : public AimDb {
     sqlite3_bind_int64(stmt, 2, row->epoch_seconds);
     sqlite3_bind_double(stmt, 3, row->score);
     sqlite3_bind_int(stmt, 4, row->mm_per_360);
+    if (row->cm_per_360 <= 0 && row->mm_per_360 > 0) row->cm_per_360 = row->mm_per_360 / 10.0;
+    sqlite3_bind_double(stmt, 5, row->cm_per_360);
 
     std::string info_content = row->info.SerializeAsString();
-    sqlite3_bind_blob(stmt, 5, info_content.data(), info_content.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 6, info_content.data(), info_content.size(), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     row->stats_id = sqlite3_last_insert_rowid(db_);
@@ -695,9 +747,11 @@ class AimDbImpl : public AimDb {
       stats.epoch_seconds = sqlite3_column_int64(stmt, 1);
       stats.score = sqlite3_column_double(stmt, 2);
       stats.mm_per_360 = static_cast<i16>(sqlite3_column_int(stmt, 3));
-      if (!IsColumnNull(stmt, 4)) {
-        const void* blob_data = sqlite3_column_blob(stmt, 4);
-        int blob_size = sqlite3_column_bytes(stmt, 4);
+      stats.cm_per_360 = sqlite3_column_double(stmt, 4);
+      if (stats.cm_per_360 <= 0 && stats.mm_per_360 > 0) stats.cm_per_360 = stats.mm_per_360 / 10.0;
+      if (!IsColumnNull(stmt, 5)) {
+        const void* blob_data = sqlite3_column_blob(stmt, 5);
+        int blob_size = sqlite3_column_bytes(stmt, 5);
         stats.info.ParseFromArray(blob_data, blob_size);
       }
     }
@@ -798,6 +852,7 @@ class AimDbImpl : public AimDb {
   void CopyAllStats(i64 from_scenario_id, i64 to_scenario_id) override {}
 
   void DeleteStats(i64 scenario_id, i64 stats_run_id) override {
+    DeleteReplay(stats_run_id);
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db_, kDeleteStatsRunSql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -816,6 +871,12 @@ class AimDbImpl : public AimDb {
   }
 
   void DeleteAllStats(i64 scenario_id) override {
+    sqlite3_stmt* replay_stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kDeleteReplaysForScenarioSql, -1, &replay_stmt, nullptr) == SQLITE_OK) {
+      sqlite3_bind_int64(replay_stmt, 1, scenario_id);
+      sqlite3_step(replay_stmt);
+      sqlite3_finalize(replay_stmt);
+    }
     sqlite3_stmt* stmt;
     int rc = sqlite3_prepare_v2(db_, kDeleteAllStatsForScenarioSql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -827,6 +888,39 @@ class AimDbImpl : public AimDb {
     if (rc != SQLITE_DONE) {
       Logger::get()->warn("Failed to delete stats for {}: {}", scenario_id, sqlite3_errmsg(db_));
     }
+    sqlite3_finalize(stmt);
+  }
+
+  bool AddReplay(i64 run_id, const std::string& replay_data) override {
+    if (replay_data.empty()) return false;
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kAddReplaySql, -1, &stmt, nullptr) != SQLITE_OK) return false;
+    sqlite3_bind_int64(stmt, 1, run_id);
+    sqlite3_bind_blob(stmt, 2, replay_data.data(), static_cast<int>(replay_data.size()), SQLITE_TRANSIENT);
+    const int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
+  }
+
+  std::string GetReplay(i64 run_id) override {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kGetReplaySql, -1, &stmt, nullptr) != SQLITE_OK) return {};
+    sqlite3_bind_int64(stmt, 1, run_id);
+    std::string data;
+    if (sqlite3_step(stmt) == SQLITE_ROW && !IsColumnNull(stmt, 0)) {
+      const void* blob_data = sqlite3_column_blob(stmt, 0);
+      const int blob_size = sqlite3_column_bytes(stmt, 0);
+      if (blob_data != nullptr && blob_size > 0) data.assign(static_cast<const char*>(blob_data), blob_size);
+    }
+    sqlite3_finalize(stmt);
+    return data;
+  }
+
+  void DeleteReplay(i64 run_id) override {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kDeleteReplaySql, -1, &stmt, nullptr) != SQLITE_OK) return;
+    sqlite3_bind_int64(stmt, 1, run_id);
+    sqlite3_step(stmt);
     sqlite3_finalize(stmt);
   }
 

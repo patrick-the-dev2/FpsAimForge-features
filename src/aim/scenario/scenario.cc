@@ -167,6 +167,9 @@ void Scenario::RefreshState() {
     effective_cm_per_360_ = 0.1;
   }
   radians_per_dot_ = CmPer360ToRadiansPerDot(effective_cm_per_360_, dpi);
+  if (replay_) {
+    replay_->replay()->cm_per_360 = effective_cm_per_360_;
+  }
 
   is_click_held_ = false;
   crosshair_ = app_.settings_manager().GetCurrentCrosshair();

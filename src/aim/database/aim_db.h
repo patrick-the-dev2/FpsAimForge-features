@@ -24,6 +24,7 @@ struct StatsDbRow {
   i64 epoch_seconds = -1;
   double score = 0;
   i16 mm_per_360 = 0;
+  double cm_per_360 = 0;
   StatsInfo info{};
 };
 
@@ -94,6 +95,10 @@ class AimDb {
   virtual void CopyAllStats(i64 from_scenario_id, i64 to_scenario_id) = 0;
   virtual void DeleteStats(i64 scenario_id, i64 stats_run_id) = 0;
   virtual void DeleteAllStats(i64 scenario_id) = 0;
+
+  virtual bool AddReplay(i64 run_id, const std::string& replay_data) = 0;
+  virtual std::string GetReplay(i64 run_id) = 0;
+  virtual void DeleteReplay(i64 run_id) = 0;
 
   //
   // PlayTime
