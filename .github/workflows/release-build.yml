@@ -60,6 +60,7 @@ jobs:
             liburing-dev
 
       # Persisted replay metadata is intentionally kept outside the parity-protected gameplay files.
+      # The guarded gameplay assets must remain byte-identical to upstream AimForge.
       - name: Verify legacy gameplay parity
         shell: bash
         run: |
