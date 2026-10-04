@@ -136,7 +136,9 @@ class AiAssistantScreen : public UiScreen {
     if (magic != "FPSAIMFORGE_AI_CHAT_V1") return;
     constexpr std::size_t kMaxMemoryFileBytes = 2U * 1024U * 1024U;
     constexpr std::size_t kMaxMessageBytes = 256U * 1024U;
-    if (std::filesystem::file_size(path) > kMaxMemoryFileBytes) {
+    std::error_code file_size_ec;
+    const auto file_size = std::filesystem::file_size(path, file_size_ec);
+    if (file_size_ec || file_size > kMaxMemoryFileBytes) {
       return;
     }
     std::size_t total_bytes = 0;
