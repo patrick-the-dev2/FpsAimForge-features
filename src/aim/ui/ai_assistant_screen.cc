@@ -134,6 +134,12 @@ class AiAssistantScreen : public UiScreen {
     std::string magic;
     std::getline(input, magic);
     if (magic != "FPSAIMFORGE_AI_CHAT_V1") return;
+    constexpr std::size_t kMaxMemoryFileBytes = 2U * 1024U * 1024U;
+    constexpr std::size_t kMaxMessageBytes = 256U * 1024U;
+    if (std::filesystem::file_size(path) > kMaxMemoryFileBytes) {
+      return;
+    }
+    std::size_t total_bytes = 0;
     while (input.good()) {
       char role = 0;
       input.get(role);
@@ -153,6 +159,7 @@ class AiAssistantScreen : public UiScreen {
       input.read(text.data(), static_cast<std::streamsize>(size));
       if (input.gcount() != static_cast<std::streamsize>(size)) break;
       if (input.peek() == '\n') input.get();
+      total_bytes += size;
       messages_.push_back({role == 'U', std::move(text)});
     }
   }
@@ -175,6 +182,9 @@ class AiAssistantScreen : public UiScreen {
     if (ec) {
       std::filesystem::remove(path, ec);
       std::filesystem::rename(temp, path, ec);
+    }
+    if (ec) {
+      std::filesystem::remove(temp, ec);
     }
   }
 
