@@ -130,7 +130,7 @@ jobs:
           $ffmpegZip = "$env:RUNNER_TEMP\\ffmpeg902.zip"
           Invoke-WebRequest -Uri "https://github.com/SubtitleEdit/support-files/releases/download/ffmpeg-v9-2/ffmpeg902.zip" -OutFile $ffmpegZip
           $ffmpegHash = (Get-FileHash $ffmpegZip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($ffmpegHash -ne "19ccdb1d6cfd4d07a14b6a4d51fb7a24c1de4672aec1485a0d0703bb7ec5ba8b") {
+          if ($ffmpegHash -ne "19ccdb1d6cfd4b07a14b6a4d51fb7a24c1de4672aec1485a0d0703bb7ec5ba8b") {
             throw "FFmpeg archive checksum mismatch."
           }
           $ffmpegExtract = "$env:RUNNER_TEMP\\ffmpeg902"
