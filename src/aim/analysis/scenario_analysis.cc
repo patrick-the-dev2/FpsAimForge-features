@@ -468,7 +468,7 @@ std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis,
   prompt << "Tracking diagnostics:\n" << analysis.tracking_summary << "\n";
   prompt << "Replay timeline sample:\n" << analysis.timeline_summary << "\n\n";
 
-  prompt << "Persisted run history (latest 20 runs):\n";
+  prompt << "Persisted run history (latest 50 runs):\n";
   if (history.empty()) {
     prompt << "No persisted run history was supplied.\n";
   } else {
