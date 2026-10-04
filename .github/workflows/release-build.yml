@@ -59,6 +59,7 @@ jobs:
             libdecor-0-dev \
             liburing-dev
 
+      # Persisted replay metadata is intentionally kept outside the parity-protected gameplay files.
       - name: Verify legacy gameplay parity
         shell: bash
         run: |
