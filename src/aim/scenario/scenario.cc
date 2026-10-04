@@ -677,19 +677,26 @@ void Scenario::HandleScenarioDone() {
       replay_->FillInMissingPitchYaws();
       replay_->replay()->cm_per_360 = effective_cm_per_360_;
       const std::string replay_data = SerializeReplay(*replay_->replay());
-      stats_saved =
-          app_.stats_manager().AddStatsAndReplay(scenario_name_, &stats_row, replay_data);
-      if (stats_saved) {
-        // Keep the hot cache populated; the database is the durable source of truth.
-        app_.replay_manager().AddReplay(stats_row.stats_id, replay_->replay());
+
+      if (!replay_data.empty()) {
+        stats_saved =
+            app_.stats_manager().AddStatsAndReplay(scenario_name_, &stats_row, replay_data);
+        if (stats_saved) {
+          // Keep the hot cache populated; the database is the durable source of truth.
+          app_.replay_manager().AddReplay(stats_row.stats_id, replay_->replay());
+        }
+      } else {
+        Logger::get()->error(
+            "Replay serialization failed for scenario {}. Saving statistics without replay.",
+            scenario_name_);
+        stats_saved = app_.stats_manager().AddStats(scenario_name_, &stats_row);
       }
     } else {
-      app_.stats_manager().AddStats(scenario_name_, &stats_row);
-      stats_saved = stats_row.stats_id > 0;
+      stats_saved = app_.stats_manager().AddStats(scenario_name_, &stats_row);
     }
 
     if (!stats_saved) {
-      Logger::get()->error("Run persistence failed for scenario {}", scenario_name_);
+      Logger::get()->error("Run statistics persistence failed for scenario {}", scenario_name_);
       return;
     }
 
