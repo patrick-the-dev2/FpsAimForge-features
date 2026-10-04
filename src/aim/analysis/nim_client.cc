@@ -1,6 +1,9 @@
 #include "nim_client.h"
 
 #include <atomic>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -77,6 +80,29 @@ std::string CurlConfigEscape(const std::string& value) {
   }
   return result;
 }
+
+#ifdef _WIN32
+int RunCommandNoWindow(const std::string& command) {
+  std::string mutable_command = command;
+  STARTUPINFOA startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  if (!CreateProcessA(nullptr, mutable_command.data(), nullptr, nullptr, FALSE,
+                      CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process)) {
+    return -1;
+  }
+  WaitForSingleObject(process.hProcess, INFINITE);
+  DWORD exit_code = 1;
+  GetExitCodeProcess(process.hProcess, &exit_code);
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+  return static_cast<int>(exit_code);
+}
+#else
+int RunCommandNoWindow(const std::string& command) {
+  return std::system(command.c_str());
+}
+#endif
 
 std::string ExtractJsonString(const std::string& json, const std::string& key) {
   const std::string needle = "\"" + key + "\"";
@@ -176,7 +202,7 @@ std::shared_ptr<NimAnalysisState> StartNimChat(const std::string& system_prompt,
     const std::string command =
         "curl --silent --show-error --fail --max-time 120 --config \"" +
         config_path + "\"";
-    const int exit_code = std::system(command.c_str());
+    const int exit_code = RunCommandNoWindow(command);
 
     std::string response;
     if (exit_code == 0) response = ReadBinaryFile(response_path);
