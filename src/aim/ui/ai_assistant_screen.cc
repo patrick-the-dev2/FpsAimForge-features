@@ -84,9 +84,6 @@ class AiAssistantScreen : public UiScreen {
   }
 
  protected:
-  }
-
- protected:
   void DrawScreen() override {
     ImGui::IdGuard cid("AiAssistantScreen");
 
