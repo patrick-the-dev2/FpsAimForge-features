@@ -23,6 +23,8 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
     const std::string& prompt, const std::vector<std::filesystem::path>& image_paths);
 std::shared_ptr<NimAnalysisState> StartNimVideoAnalysis(
     const std::string& prompt, const std::filesystem::path& video_path);
+std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
+    const std::string& prompt, const std::vector<std::filesystem::path>& image_paths);
 bool IsNimConfigured();
 std::string GetNimConfigurationHint();
 
