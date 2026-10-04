@@ -77,10 +77,14 @@ class StatsManagerImpl : public StatsManager {
 
   bool DeleteStats(const std::string& scenario_name, i64 run_id) override {
     i64 scenario_id = db_->GetScenarioId(scenario_name);
-    db_->DeleteStats(scenario_id, run_id);
+    const bool deleted = db_->DeleteStats(scenario_id, run_id);
     stats_cache_.erase(scenario_id);
+    return deleted;
   }
 
+  bool GetStatsDetails(const std::string& scenario_name,
+                       i64 run_id,
+                       StatsDetails* details) override {
     *details = {};
 
     auto all_stats = GetStats(scenario_name);
