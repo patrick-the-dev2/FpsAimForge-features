@@ -723,7 +723,48 @@ class AimDbImpl : public AimDb {
     sqlite3_bind_blob(stmt, 6, info_content.data(), info_content.size(), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+      Logger::get()->warn("Failed to add stats for scenario {}: {}", scenario_id, sqlite3_errmsg(db_));
+      return false;
+    }
+
     row->stats_id = sqlite3_last_insert_rowid(db_);
+    return true;
+  }
+
+  bool AddStatsAndReplay(i64 scenario_id,
+                         StatsDbRow* row,
+                         std::string_view replay_data) override {
+    if (replay_data.empty()) {
+      Logger::get()->warn("Refusing to persist an empty replay for scenario {}", scenario_id);
+      return false;
+    }
+
+    if (!ExecuteSqliteQuery(db_, "BEGIN IMMEDIATE TRANSACTION;")) {
+      Logger::get()->warn("Failed to begin stats/replay transaction: {}", sqlite3_errmsg(db_));
+      return false;
+    }
+
+    if (!AddStats(scenario_id, row)) {
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      row->stats_id = -1;
+      return false;
+    }
+
+    if (!AddReplay(row->stats_id, std::string(replay_data))) {
+      Logger::get()->warn("Failed to persist replay for run {}", row->stats_id);
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      row->stats_id = -1;
+      return false;
+    }
+
+    if (!ExecuteSqliteQuery(db_, "COMMIT;")) {
+      Logger::get()->warn("Failed to commit stats/replay transaction: {}", sqlite3_errmsg(db_));
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      row->stats_id = -1;
+      return false;
+    }
 
     return true;
   }
