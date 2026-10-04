@@ -597,7 +597,6 @@ class ReplayViewerScreen : public Screen {
     timer_.StartLoop();
     timer_.ResumeRun();
     if (capture_state_) {
-      const float duration = std::max(0.001f, replay_->GetDurationSeconds());
       // Cosmos3-Nano-Reasoner recommends 4 FPS for video understanding.
       capture_interval_micros_ = 250000;
     }

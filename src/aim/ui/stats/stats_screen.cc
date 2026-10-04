@@ -798,8 +798,8 @@ class StatsScreen : public UiScreen {
       } else {
         ImGui::TextWrapped(
             "NVIDIA NIM is optional. Set NVIDIA_NIM_API_KEY to enable AI coaching. "
-            "The visual reviewer uses NVIDIA_NIM_VISION_MODEL, defaulting to "
-            "deepseek-ai/deepseek-v4.1-flash.");
+            "The replay video reviewer uses NVIDIA_NIM_VIDEO_MODEL, defaulting to "
+            "nvidia/cosmos3-nano-reasoner.");
       }
     }
 
