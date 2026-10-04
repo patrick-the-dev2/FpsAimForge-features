@@ -14,6 +14,7 @@
 #include "aim/database/aim_db.h"
 #include "aim/common/util.h"
 #include "aim/core/camera.h"
+#include "absl/time/time.h"
 
 namespace aim {
 namespace {
@@ -440,10 +441,11 @@ std::string FormatHistoryRow(const StatsDbRow& row) {
   const double shots = row.info.num_shots();
   const double hits = row.info.num_hits();
   const double accuracy = shots > 0 ? 100.0 * hits / shots : 0.0;
-  const std::string timestamp =
-      std::format("{} {}",
-                   EpochSecondsToIsoDate(row.epoch_seconds, absl::LocalTimeZone()),
-                   EpochSecondsToString(row.epoch_seconds));
+  // Keep persisted-history timestamps deterministic across runners and time zones.
+  // The analysis prompt is machine-readable context, so it must not change based on the
+  // runner local timezone. Always render the stored epoch as an explicit UTC timestamp.
+  const std::string timestamp = absl::FormatTime(
+      "%Y-%m-%d %H:%M:%S UTC", absl::FromUnixSeconds(row.epoch_seconds), absl::UTCTimeZone());
   return std::format(
       "run={} | date={} | score={:.3f} | cm/360={} | hits={:.1f} | shots={:.1f} | accuracy={:.2f}%",
       row.stats_id, timestamp, row.score, FormatHistoryCm360(row), hits, shots, accuracy);
