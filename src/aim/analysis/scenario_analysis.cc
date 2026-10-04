@@ -498,6 +498,5 @@ std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis,
             "Never infer a cm/360 that is not explicitly provided.";
   return prompt.str();
 }
-}
 
 }  // namespace aim
