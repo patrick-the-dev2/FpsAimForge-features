@@ -79,8 +79,11 @@ class AiAssistantScreen : public UiScreen {
     messages_.push_back({false,
                          "I have access to your scenarios, playlists, statistics, settings, "
                          "replay/analysis features, and writable bundles. I can also create "
-                         "scenarios and playlists. Try: "build me a 20-minute tracking playlist "
-                         "from my weakest scenarios"."});
+                         "scenarios and playlists. Try: build me a 20-minute tracking playlist "
+                         "from my weakest scenarios."});
+  }
+
+ protected:
   }
 
  protected:
