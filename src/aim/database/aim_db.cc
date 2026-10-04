@@ -364,7 +364,7 @@ bool HasTableColumn(sqlite3* db, const char* table, const char* column) {
   bool found = false;
   while (sqlite3_step(stmt) == SQLITE_ROW) {
     const unsigned char* name = sqlite3_column_text(stmt, 1);
-    if (name != nullptr && column == reinterpret_cast<const char*>(name)) { found = true; break; }
+    if (name != nullptr && strcmp(column, reinterpret_cast<const char*>(name)) == 0) { found = true; break; }
   }
   sqlite3_finalize(stmt);
   return found;
