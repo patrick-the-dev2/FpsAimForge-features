@@ -85,8 +85,6 @@ class AiAssistantScreen : public UiScreen {
 
  protected:
   void DrawScreen() override {
-    ImGui::IdGuard cid("AiAssistantScreen");
-
     if (app_.BeginFullscreenWindow("AI Coach")) {
       DrawContent();
     }
@@ -109,7 +107,7 @@ class AiAssistantScreen : public UiScreen {
 
  private:
   void DrawContent() {
-    const float char_x = ImGui::GetDefaultCharSizeX();
+    const float char_x = ImGui::GetFontSize();
 
     ImGui::Text("AI Coach");
     ImGui::SameLine();
@@ -127,9 +125,13 @@ class AiAssistantScreen : public UiScreen {
 
     if (ImGui::BeginChild("ChatHistory", ImVec2(0, -char_x * 8), true)) {
       for (const auto& message : messages_) {
-        ImGui::PushStyleColor(ImGuiCol_Text, message.user ? ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]
-                                                          : ImGui::GetStyle().Colors[ImGuiCol_Text]);
-        ImGui::TextWrapped("%s", (message.user ? "You: " : "AI: ").append(message.text).c_str());
+        ImGui::PushStyleColor(
+            ImGuiCol_Text,
+            message.user ? ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]
+                         : ImGui::GetStyle().Colors[ImGuiCol_Text]);
+        std::string label = message.user ? "You: " : "AI: ";
+        label += message.text;
+        ImGui::TextWrapped("%s", label.c_str());
         ImGui::PopStyleColor();
         ImGui::Spacing();
       }
@@ -256,7 +258,7 @@ class AiAssistantScreen : public UiScreen {
       conversation += messages_[i].user ? "USER: " : "ASSISTANT: ";
       conversation += messages_[i].text + "\n";
     }
-    conversation += "\nLIVE APP CONTEXT:\n" + BuildAppContext();
+    conversation += "\nLIVE APP CONTEXT:\n" + BuildAppContext(user_text);
     request_ = StartNimChat(BuildSystemPrompt(), conversation);
   }
 
