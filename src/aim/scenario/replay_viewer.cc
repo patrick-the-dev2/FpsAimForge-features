@@ -583,7 +583,7 @@ class ReplayViewerScreen : public Screen {
         }
       }
       if (finish_capture) {
-        capture_state_->nim_state = StartNimVisualAnalysis(prompt, paths);
+        capture_state_->nim_state = StartNimVideoAnalysisFromFrames(prompt, paths);
       }
     }
 
