@@ -15,16 +15,17 @@ class StatsManagerImpl : public StatsManager {
  public:
   StatsManagerImpl(AimDb* db) : db_(db) {}
 
-  void AddStats(const std::string& scenario_name, StatsDbRow* row) override {
+  bool AddStats(const std::string& scenario_name, StatsDbRow* row) override {
     i64 scenario_id = db_->GetScenarioId(scenario_name);
     if (!db_->AddStats(scenario_id, row)) {
       Logger::get()->warn("Failed to persist stats for {}", scenario_name);
-      return;
+      return false;
     }
     stats_cache_.erase(scenario_id);
     latest_scenario_id_ = scenario_id;
     latest_run_id_ = row->stats_id;
     highest_complete_level_cache_.clear();
+    return true;
   }
 
   bool AddStatsAndReplay(const std::string& scenario_name,
@@ -64,16 +65,17 @@ class StatsManagerImpl : public StatsManager {
     return stats;
   }
 
-  void DeleteAllStats(const std::string& scenario_name) override {
+  bool DeleteAllStats(const std::string& scenario_name) override {
     i64 scenario_id = db_->GetScenarioId(scenario_name);
-    db_->DeleteAllStats(scenario_id);
+    const bool deleted = db_->DeleteAllStats(scenario_id);
     stats_cache_.erase(scenario_id);
+    return deleted;
   }
 
   void CopyAllStats(const std::string& from_scenario_name,
                     const std::string& to_scenario_name) override {}
 
-  void DeleteStats(const std::string& scenario_name, i64 run_id) override {
+  bool DeleteStats(const std::string& scenario_name, i64 run_id) override {
     i64 scenario_id = db_->GetScenarioId(scenario_name);
     db_->DeleteStats(scenario_id, run_id);
     stats_cache_.erase(scenario_id);
@@ -144,6 +146,9 @@ class StatsManagerImpl : public StatsManager {
 
     if (!found_stats) {
       return false;
+    }
+    if (details->min_score == 1000000) {
+      details->min_score = 0;
     }
 
     if (found_max_index >= 0) {

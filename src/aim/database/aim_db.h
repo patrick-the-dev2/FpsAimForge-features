@@ -97,8 +97,8 @@ class AimDb {
   virtual std::vector<StatsDbRow> GetStats(i64 scenario_id) = 0;
   virtual i64 GetLatestStatsId(i64 scenario_id) = 0;
   virtual void CopyAllStats(i64 from_scenario_id, i64 to_scenario_id) = 0;
-  virtual void DeleteStats(i64 scenario_id, i64 stats_run_id) = 0;
-  virtual void DeleteAllStats(i64 scenario_id) = 0;
+  virtual bool DeleteStats(i64 scenario_id, i64 stats_run_id) = 0;
+  virtual bool DeleteAllStats(i64 scenario_id) = 0;
 
   virtual bool AddReplay(i64 run_id, const std::string& replay_data) = 0;
   virtual std::string GetReplay(i64 run_id) = 0;

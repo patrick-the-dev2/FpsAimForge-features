@@ -851,44 +851,79 @@ class AimDbImpl : public AimDb {
 
   void CopyAllStats(i64 from_scenario_id, i64 to_scenario_id) override {}
 
-  void DeleteStats(i64 scenario_id, i64 stats_run_id) override {
-    DeleteReplay(stats_run_id);
-    sqlite3_stmt* stmt;
+  bool DeleteStats(i64 scenario_id, i64 stats_run_id) override {
+    if (!ExecuteSqliteQuery(db_, "BEGIN IMMEDIATE TRANSACTION;")) {
+      return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, kDeleteStatsRunSql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
-      Logger::get()->warn("Failed to fetch data: {}", sqlite3_errmsg(db_));
-      return;
+      Logger::get()->warn("Failed to prepare stats delete: {}", sqlite3_errmsg(db_));
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
     }
+
     sqlite3_bind_int64(stmt, 1, scenario_id);
     sqlite3_bind_int64(stmt, 2, stats_run_id);
     rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
-      Logger::get()->warn(
-          "Failed to delete stats for {} {}: {}", scenario_id, stats_run_id, sqlite3_errmsg(db_));
+      Logger::get()->warn("Failed to delete stats for {} {}: {}",
+                          scenario_id, stats_run_id, sqlite3_errmsg(db_));
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
     }
-    sqlite3_finalize(stmt);
+
+    DeleteReplay(stats_run_id);
+    if (!ExecuteSqliteQuery(db_, "COMMIT;")) {
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
+    }
+    return true;
   }
 
-  void DeleteAllStats(i64 scenario_id) override {
-    sqlite3_stmt* replay_stmt = nullptr;
-    if (sqlite3_prepare_v2(db_, kDeleteReplaysForScenarioSql, -1, &replay_stmt, nullptr) == SQLITE_OK) {
-      sqlite3_bind_int64(replay_stmt, 1, scenario_id);
-      sqlite3_step(replay_stmt);
-      sqlite3_finalize(replay_stmt);
+  bool DeleteAllStats(i64 scenario_id) override {
+    if (!ExecuteSqliteQuery(db_, "BEGIN IMMEDIATE TRANSACTION;")) {
+      return false;
     }
-    sqlite3_stmt* stmt;
+
+    sqlite3_stmt* replay_stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, kDeleteReplaysForScenarioSql, -1, &replay_stmt, nullptr) != SQLITE_OK) {
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
+    }
+    sqlite3_bind_int64(replay_stmt, 1, scenario_id);
+    const int replay_rc = sqlite3_step(replay_stmt);
+    sqlite3_finalize(replay_stmt);
+    if (replay_rc != SQLITE_DONE) {
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
+    }
+
+    sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, kDeleteAllStatsForScenarioSql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
-      Logger::get()->warn("Failed to fetch data: {}", sqlite3_errmsg(db_));
-      return;
+      Logger::get()->warn("Failed to prepare stats delete-all: {}", sqlite3_errmsg(db_));
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
     }
     sqlite3_bind_int64(stmt, 1, scenario_id);
     rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
     if (rc != SQLITE_DONE) {
       Logger::get()->warn("Failed to delete stats for {}: {}", scenario_id, sqlite3_errmsg(db_));
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
     }
-    sqlite3_finalize(stmt);
+
+    if (!ExecuteSqliteQuery(db_, "COMMIT;")) {
+      ExecuteSqliteQuery(db_, "ROLLBACK;");
+      return false;
+    }
+    return true;
   }
 
   bool AddReplay(i64 run_id, const std::string& replay_data) override {

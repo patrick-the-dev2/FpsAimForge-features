@@ -38,7 +38,7 @@ class StatsManager {
  public:
   virtual ~StatsManager() {}
 
-  virtual void AddStats(const std::string& scenario_name, StatsDbRow* row) = 0;
+  virtual bool AddStats(const std::string& scenario_name, StatsDbRow* row) = 0;
   virtual bool AddStatsAndReplay(const std::string& scenario_name,
                                  StatsDbRow* row,
                                  const std::string& replay_data) = 0;
@@ -51,12 +51,12 @@ class StatsManager {
 
   virtual AggregateScenarioStats GetAggregateStats(const std::string& scenario_name) = 0;
 
-  virtual void DeleteAllStats(const std::string& scenario_name) = 0;
+  virtual bool DeleteAllStats(const std::string& scenario_name) = 0;
 
   virtual void CopyAllStats(const std::string& from_scenario_name,
                             const std::string& to_scenario_name) = 0;
 
-  virtual void DeleteStats(const std::string& scenario_name, i64 run_id) = 0;
+  virtual bool DeleteStats(const std::string& scenario_name, i64 run_id) = 0;
 
   // Gets relevant stats for a particular run including things like the previous high score.
   virtual bool GetStatsDetails(const std::string& scenario_name,
