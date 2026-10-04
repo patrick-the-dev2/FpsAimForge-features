@@ -123,6 +123,21 @@ jobs:
           Copy-Item build-windows/bin/Release/FpsAimForge.exe release-windows/FpsAimForge.exe
           Copy-Item -Recurse src/resources release-windows/resources
           Copy-Item -Recurse build-windows/bin/shaders release-windows/shaders
+
+          # FFmpeg is used only to turn the app's captured replay frames into MP4 for
+          # NVIDIA's hosted video-capable NIM endpoint. The binary is distributed
+          # separately from the application source and remains unmodified.
+          $ffmpegZip = "$env:RUNNER_TEMP\\ffmpeg902.zip"
+          Invoke-WebRequest -Uri "https://github.com/SubtitleEdit/support-files/releases/download/ffmpeg-v9-2/ffmpeg902.zip" -OutFile $ffmpegZip
+          $ffmpegHash = (Get-FileHash $ffmpegZip -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($ffmpegHash -ne "19ccdb1d6cfd4d07a14b6a4d51fb7a24c1de4672aec1485a0d0703bb7ec5ba8b") {
+            throw "FFmpeg archive checksum mismatch."
+          }
+          $ffmpegExtract = "$env:RUNNER_TEMP\\ffmpeg902"
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegExtract -Force
+          Copy-Item "$ffmpegExtract\\ffmpeg.exe" release-windows/ffmpeg.exe
+          if (-not (Test-Path release-windows/ffmpeg.exe)) { throw "Bundled FFmpeg executable missing." }
+
           if (-not (Test-Path release-windows/FpsAimForge.exe)) { throw "Windows executable missing from release package." }
           $shaderCount = (Get-ChildItem -Recurse -File release-windows/shaders | Measure-Object).Count
           if ($shaderCount -lt 1) { throw "Compiled shader package is empty." }
