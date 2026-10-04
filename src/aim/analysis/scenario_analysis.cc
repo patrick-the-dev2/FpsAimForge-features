@@ -1,7 +1,6 @@
 #include "scenario_analysis.h"
 
 #include <algorithm>
-#include <absl/time/time.h>
 #include <cmath>
 #include <format>
 #include <limits>
@@ -11,6 +10,7 @@
 #include <utility>
 
 #include "aim/common/geometry.h"
+#include "aim/common/times.h"
 #include "aim/database/aim_db.h"
 #include "aim/common/util.h"
 #include "aim/core/camera.h"
@@ -441,9 +441,9 @@ std::string FormatHistoryRow(const StatsDbRow& row) {
   const double hits = row.info.num_hits();
   const double accuracy = shots > 0 ? 100.0 * hits / shots : 0.0;
   const std::string timestamp =
-      absl::FormatTime("%Y-%m-%d %H:%M:%S UTC",
-                       absl::FromTimeT(row.epoch_seconds),
-                       absl::UTCTimeZone());
+      std::format("{} {}",
+                   EpochSecondsToIsoDate(row.epoch_seconds, absl::LocalTimeZone()),
+                   EpochSecondsToString(row.epoch_seconds));
   return std::format(
       "run={} | date={} | score={:.3f} | cm/360={} | hits={:.1f} | shots={:.1f} | accuracy={:.2f}%",
       row.stats_id, timestamp, row.score, FormatHistoryCm360(row), hits, shots, accuracy);
@@ -472,7 +472,7 @@ std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis,
   if (history.empty()) {
     prompt << "No persisted run history was supplied.\n";
   } else {
-    const size_t start = history.size() > 20 ? history.size() - 20 : 0;
+    const size_t start = history.size() > 50 ? history.size() - 50 : 0;
     for (size_t i = start; i < history.size(); ++i) {
       prompt << "- " << FormatHistoryRow(history[i]) << "\n";
     }

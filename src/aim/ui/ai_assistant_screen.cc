@@ -99,7 +99,14 @@ class AiAssistantScreen : public UiScreen {
   }
 
   void OnTick() override {
-    if (request_ && request_->done) {
+    if (!request_) return;
+
+    bool done = false;
+    {
+      std::lock_guard lock(request_->mutex);
+      done = request_->done;
+    }
+    if (done) {
       std::lock_guard lock(request_->mutex);
       if (request_->success) {
         const std::string response = request_->response;

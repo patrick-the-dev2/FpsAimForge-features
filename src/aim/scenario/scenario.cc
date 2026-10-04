@@ -671,13 +671,28 @@ void Scenario::HandleScenarioDone() {
     }
 
     StatsDbRow stats_row = *maybe_stats_row;
-    app_.stats_manager().AddStats(scenario_name_, &stats_row);
+    bool stats_saved = false;
 
     if (replay_) {
       replay_->FillInMissingPitchYaws();
-      assert(stats_row.stats_id > 0 && "Missing stats id. Make sure it was added to db already.");
-      app_.replay_manager().AddReplay(stats_row.stats_id, replay_->replay());
+      replay_->replay()->cm_per_360 = effective_cm_per_360_;
+      const std::string replay_data = SerializeReplay(*replay_->replay());
+      stats_saved =
+          app_.stats_manager().AddStatsAndReplay(scenario_name_, &stats_row, replay_data);
+      if (stats_saved) {
+        // Keep the hot cache populated; the database is the durable source of truth.
+        app_.replay_manager().AddReplay(stats_row.stats_id, replay_->replay());
+      }
+    } else {
+      app_.stats_manager().AddStats(scenario_name_, &stats_row);
+      stats_saved = stats_row.stats_id > 0;
     }
+
+    if (!stats_saved) {
+      Logger::get()->error("Run persistence failed for scenario {}", scenario_name_);
+      return;
+    }
+
     state_.AddPerformanceStats(scenario_name_, stats_row.stats_id, perf_stats_);
     PushNextScreen(CreateStatsScreen(scenario_name_, stats_row.stats_id, true));
   }

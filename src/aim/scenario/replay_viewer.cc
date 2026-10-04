@@ -598,9 +598,8 @@ class ReplayViewerScreen : public Screen {
     timer_.ResumeRun();
     if (capture_state_) {
       const float duration = std::max(0.001f, replay_->GetDurationSeconds());
-      // Keep the complete timeline while capping visual frames at 60 for NIM request size.
-      capture_interval_micros_ = std::max<i64>(
-          500000, SecondsToMicros(duration / 60.0f));
+      // Cosmos3-Nano-Reasoner recommends 4 FPS for video understanding.
+      capture_interval_micros_ = 250000;
     }
   }
 

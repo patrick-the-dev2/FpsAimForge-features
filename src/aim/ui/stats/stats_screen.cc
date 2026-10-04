@@ -168,6 +168,13 @@ StatsComparison GetStatsComparison(const StatsDbRow& current_stats,
                                    const StatsDbRow& comparison_stats) {
   StatsComparison r;
   r.score_diff = current_stats.score - comparison_stats.score;
+  if (comparison_stats.score == 0) {
+    r.score_diff_percent = 0;
+    r.score_diff_percent_string = r.score_diff == 0 ? "0%" : "N/A";
+    r.score_diff_string = MaybeIntToString(r.score_diff, 2);
+    return r;
+  }
+
   r.score_diff_percent = r.score_diff / comparison_stats.score;
 
   std::string percent_diff_str = MaybeIntToString(abs(r.score_diff_percent) * 100, 1);
@@ -464,7 +471,7 @@ class StatsScreen : public UiScreen {
 
       float max_score = comparison_stats.info.num_hits();
       float penalty = max_score - comparison_stats.score;
-      float penalty_percent = 100 * (penalty / max_score);
+      float penalty_percent = max_score > 0 ? 100 * (penalty / max_score) : 0;
 
       if (penalty > 0) {
         ImGui::TextFmt("{}% ({})", MaybeIntToString(penalty_percent, 2), MaybeIntToString(penalty));
@@ -473,7 +480,10 @@ class StatsScreen : public UiScreen {
 
     // cm/360
     ImGui::TableNextColumn();
-    ImGui::Text(MaybeIntToString(comparison_stats.mm_per_360 / 10.0));
+    const double cm = comparison_stats.cm_per_360 > 0
+                          ? comparison_stats.cm_per_360
+                          : comparison_stats.mm_per_360 / 10.0;
+    ImGui::TextFmt("{:.3f}", cm);
 
     // time
     ImGui::TableNextColumn();
@@ -894,7 +904,7 @@ class StatsScreen : public UiScreen {
 
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextFmt("{}", MaybeIntToString(row.cm_per_360, 1));
+        ImGui::TextFmt("{:.3f}", row.cm_per_360);
 
         ImGui::TableNextColumn();
         if (row.time_ago.size() > 0) {

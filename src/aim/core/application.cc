@@ -694,7 +694,7 @@ class ApplicationImpl : public Application {
       options.max_backups = settings.max_backups_to_keep();
     }
     if (settings.has_backup_every_n_days()) {
-      options.max_backups = settings.backup_every_n_days();
+      options.backup_every_n_days = settings.backup_every_n_days();
     }
 
     BackupActions actions = GetBackupActions(backup_dir, "aim_", options, now_date);

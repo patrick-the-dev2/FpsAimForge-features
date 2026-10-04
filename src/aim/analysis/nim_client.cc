@@ -304,7 +304,7 @@ std::shared_ptr<NimAnalysisState> StartNimVisualAnalysis(
                  "weak points, what happened, where failures occurred, and concrete practice "
                  "actions. The images are chronological and cover the entire scenario.\"},"
                  "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\""
-              << JsonEscape(prompt + "\n\nVisual replay: chronological frames sampled every 0.5 seconds.")
+              << JsonEscape(prompt + "\n\nVisual replay: chronological frames sampled at 4 frames per second.")
               << "\"}";
 
       for (const auto& image_path : image_paths) {
@@ -421,7 +421,7 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysis(
                                              : kDefaultEndpoint;
   const std::string model = !GetEnv("NVIDIA_NIM_VIDEO_MODEL").empty()
                                 ? GetEnv("NVIDIA_NIM_VIDEO_MODEL")
-                                : "google/diffusiongemma-26b-a4b-it";
+                                : "nvidia/cosmos3-nano-reasoner";
 
   std::thread([state, prompt, video_path, api_key, endpoint, model]() {
     const auto id = g_request_counter.fetch_add(1);
@@ -545,7 +545,7 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
 
     const std::string command =
         "\"" + CurlConfigEscape(ffmpeg_path.string()) +
-        "\" -hide_banner -loglevel error -y -framerate 1 -i \"" +
+        "\" -hide_banner -loglevel error -y -framerate 4 -i \"" +
         CurlConfigEscape((parent / "frame_%04d.png").string()) +
         "\" -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -movflags +faststart \"" +
         CurlConfigEscape(video_path) + "\" > \"" + CurlConfigEscape(log_path) + "\" 2>&1";
