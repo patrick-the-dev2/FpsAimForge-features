@@ -660,6 +660,7 @@ void Scenario::HandleScenarioDone() {
 
   std::optional<StatsDbRow> maybe_stats_row = GetStatsRow();
   if (maybe_stats_row) {
+    maybe_stats_row->cm_per_360 = effective_cm_per_360_;
     // Also write the stats for the non fixed cm/360 scenario name.
     // Write this version first so that the real run is still considered latest.
     NameInfo name_info = GetNameInfo(scenario_name_);
