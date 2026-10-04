@@ -217,7 +217,6 @@ class AiAssistantScreen : public UiScreen {
           "NVIDIA NIM is not configured. Set NVIDIA_NIM_API_KEY and restart FpsAimForge.");
       ImGui::Spacing();
       ImGui::TextWrapped("%s", GetNimConfigurationHint().c_str());
-      ImGui::End();
       return;
     }
 
