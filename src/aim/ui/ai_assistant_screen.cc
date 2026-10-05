@@ -99,26 +99,27 @@ class AiAssistantScreen : public UiScreen {
   }
 
   void OnTick() override {
-    if (!request_) return;
-
-    bool done = false;
-    {
-      std::lock_guard lock(request_->mutex);
-      done = request_->done;
-    }
-    if (done) {
-      std::lock_guard lock(request_->mutex);
-      if (request_->success) {
-        const std::string response = request_->response;
-        messages_.push_back({false, response});
-        ExecuteAction(response);
-        SaveMemory();
-      } else {
-        messages_.push_back({false, "AI request failed: " + request_->error});
-        SaveMemory();
+    if (request_) {
+      bool done = false;
+      {
+        std::lock_guard lock(request_->mutex);
+        done = request_->done;
       }
-      request_.reset();
+      if (done) {
+        std::lock_guard lock(request_->mutex);
+        if (request_->success) {
+          const std::string response = request_->response;
+          messages_.push_back({false, response});
+          ExecuteAction(response);
+          SaveMemory();
+        } else {
+          messages_.push_back({false, "AI request failed: " + request_->error});
+          SaveMemory();
+        }
+        request_.reset();
+      }
     }
+    UiScreen::OnTick();
   }
 
  private:
