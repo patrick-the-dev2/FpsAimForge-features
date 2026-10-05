@@ -79,6 +79,7 @@ std::string ExtractJsonObject(const std::string& text, const std::string& prefix
 class AiAssistantScreen : public UiScreen {
  public:
   AiAssistantScreen() {
+    current_session_ = 0;
     LoadMemory();
     if (messages_.empty()) {
       messages_.push_back({false,
@@ -88,6 +89,62 @@ class AiAssistantScreen : public UiScreen {
                            "from my weakest scenarios."});
       SaveMemory();
     }
+  }
+
+  // Rotate sessions: shift existing files up by one slot, making slot 0 free.
+  void RotateSessions() {
+    std::error_code ec;
+    // Drop the oldest if we're at the limit
+    auto oldest = SessionPath(kMaxSessions - 1);
+    std::filesystem::remove(oldest, ec);
+    // Shift session 3→4, 2→3, 1→2, 0→1
+    for (int i = kMaxSessions - 1; i > 0; --i) {
+      auto from = SessionPath(i - 1);
+      auto to   = SessionPath(i);
+      if (std::filesystem::exists(from, ec)) {
+        std::filesystem::rename(from, to, ec);
+      }
+    }
+  }
+
+  // Return a one-line preview of a session (first AI message, truncated).
+  std::string SessionPreview(int index) const {
+    const auto path = SessionPath(index);
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return "(empty)";
+    std::string magic;
+    std::getline(f, magic);
+    if (!magic.empty() && magic.back() == '\r') magic.pop_back();
+    if (magic != "FPSAIMFORGE_AI_CHAT_V1") return "(invalid)";
+    // Read messages until we find an AI message
+    while (f.good()) {
+      char role = 0;
+      while (f.good()) {
+        f.get(role);
+        if (!f) return "(empty)";
+        if (role == 'U' || role == 'A') break;
+        if (role != '\n' && role != '\r') { std::string d; std::getline(f, d); }
+      }
+      if (!f || (role != 'U' && role != 'A')) break;
+      if (f.peek() != ' ') break;
+      f.get();
+      std::string size_text; std::getline(f, size_text);
+      if (!size_text.empty() && size_text.back() == '\r') size_text.pop_back();
+      if (size_text.empty()) break;
+      size_t size = 0;
+      try { size = std::stoull(size_text); } catch (...) { break; }
+      if (size == 0 || size > 512U * 1024U) break;
+      std::string text(size, '\0');
+      f.read(text.data(), static_cast<std::streamsize>(size));
+      if (static_cast<size_t>(f.gcount()) != size) break;
+      while (f.peek() == '\n' || f.peek() == '\r') f.get();
+      if (role == 'U') {
+        // Return the user's first message as preview
+        if (text.size() > 60) text = text.substr(0, 57) + "...";
+        return text;
+      }
+    }
+    return "(empty)";
   }
 
  protected:
@@ -126,9 +183,12 @@ class AiAssistantScreen : public UiScreen {
 
  private:
 
-  std::filesystem::path MemoryPath() const {
-    return app_.file_system().GetUserDataPath("ai_coach_memory.bin");
+  std::filesystem::path SessionPath(int index) const {
+    if (index == 0) return app_.file_system().GetUserDataPath("ai_coach_memory.bin");
+    return app_.file_system().GetUserDataPath(
+        std::format("ai_coach_memory_{}.bin", index));
   }
+  std::filesystem::path MemoryPath() const { return SessionPath(current_session_); }
 
   void LoadMemory() {
     const auto path = MemoryPath();
@@ -217,40 +277,78 @@ class AiAssistantScreen : public UiScreen {
     ImGui::SameLine();
     ImGui::TextDisabled("NVIDIA NIM");
     ImGui::SameLine();
+
+    // Chat menu
     if (ImGui::Button("Chat")) {
       ImGui::OpenPopup("AiCoachChatMenu");
     }
     if (ImGui::BeginPopup("AiCoachChatMenu")) {
       if (ImGui::MenuItem("New chat")) {
-        messages_.clear();
+        // Save current session, rotate files, start fresh in slot 0.
         SaveMemory();
+        RotateSessions();
+        current_session_ = 0;
+        messages_.clear();
         messages_.push_back({false, "New chat started. Your local app statistics and capabilities are available to me."});
         SaveMemory();
+        scroll_to_bottom_ = true;
       }
-      if (ImGui::MenuItem("Memory")) {
+      ImGui::Separator();
+      if (ImGui::MenuItem("Memory info")) {
         ImGui::OpenPopup("AiCoachMemory");
       }
-      if (ImGui::MenuItem("Clear saved memory")) {
+      if (ImGui::MenuItem("Clear this chat")) {
         messages_.clear();
         SaveMemory();
-        messages_.push_back({false, "Saved chat memory cleared."});
+        messages_.push_back({false, "Chat cleared."});
         SaveMemory();
+        scroll_to_bottom_ = true;
       }
       ImGui::EndPopup();
     }
     if (ImGui::BeginPopup("AiCoachMemory")) {
-      const auto memory_path = app_.file_system().GetUserDataPath("ai_coach_memory.bin");
-      ImGui::TextWrapped("Persistent AI chat memory is stored locally on this PC:");
-      ImGui::TextWrapped("%s", memory_path.string().c_str());
+      const auto memory_path = SessionPath(0);
+      ImGui::TextWrapped("Chat sessions are stored locally:");
+      ImGui::TextWrapped("%s", memory_path.parent_path().string().c_str());
       ImGui::Separator();
-      ImGui::TextWrapped("This stores the conversation history. Live scenarios, playlists and statistics are read from the app each time you send a message.");
-      if (ImGui::Button("Open memory folder")) {
+      ImGui::TextWrapped("Up to %d sessions are kept. Live app data is re-read each message.", kMaxSessions);
+      if (ImGui::Button("Open folder")) {
         OpenFolderInExplorer(memory_path.parent_path());
       }
       ImGui::EndPopup();
     }
+
+    // Sessions button
     ImGui::SameLine();
-    ImGui::TextDisabled("Local memory");
+    if (ImGui::Button("Sessions")) {
+      ImGui::OpenPopup("AiCoachSessions");
+    }
+    if (ImGui::BeginPopup("AiCoachSessions")) {
+      ImGui::TextDisabled("Recent sessions (newest first)");
+      ImGui::Separator();
+      for (int i = 0; i < kMaxSessions; ++i) {
+        std::error_code ec;
+        if (i > 0 && !std::filesystem::exists(SessionPath(i), ec)) break;
+        const std::string preview = SessionPreview(i);
+        const bool is_current = (i == current_session_);
+        std::string label = std::format("{} {}: {}",
+            is_current ? ">" : " ", i == 0 ? "Latest" : std::format("Session -{}", i), preview);
+        if (ImGui::Selectable(label.c_str(), is_current) && !is_current) {
+          SaveMemory();
+          current_session_ = i;
+          messages_.clear();
+          LoadMemory();
+          if (messages_.empty()) {
+            messages_.push_back({false, "This session is empty."});
+          }
+          scroll_to_bottom_ = true;
+        }
+      }
+      ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+    ImGui::TextDisabled(current_session_ == 0 ? "Latest" : std::format("Session -{}", current_session_).c_str());
     ImGui::Separator();
 
     if (!IsNimConfigured()) {
@@ -299,13 +397,17 @@ class AiAssistantScreen : public UiScreen {
     float btn_width = char_x * 7;
     float input_width = ImGui::GetContentRegionAvail().x - btn_width * 2 - ImGui::GetStyle().ItemSpacing.x * 2;
     ImGui::SetNextItemWidth(input_width);
-    bool enter_pressed = ImGui::InputTextMultiline(
-        "##AiInput", &input_, ImVec2(input_width, char_x * 5),
-        ImGuiInputTextFlags_CtrlEnterForNewLine);
+    // No EnterReturnsTrue / CtrlEnterForNewLine — Enter adds a newline naturally.
+    // Send via button or Ctrl+Enter shortcut checked below.
+    ImGui::InputTextMultiline(
+        "##AiInput", &input_, ImVec2(input_width, char_x * 5));
+    const bool ctrl_enter = ImGui::IsItemFocused() &&
+                            ImGui::IsKeyPressed(ImGuiKey_Enter, false) &&
+                            ImGui::GetIO().KeyCtrl;
     ImGui::SameLine();
     ImGui::BeginGroup();
     ImGui::BeginDisabled(request_ != nullptr || input_.empty());
-    if (ImGui::Button("Send", ImVec2(btn_width, char_x * 2.5f)) || (enter_pressed && !input_.empty())) {
+    if (ImGui::Button("Send", ImVec2(btn_width, char_x * 2.5f)) || (ctrl_enter && !input_.empty())) {
       SendMessage();
       scroll_to_bottom_ = true;
     }
@@ -558,6 +660,8 @@ class AiAssistantScreen : public UiScreen {
   std::string input_;
   std::shared_ptr<NimAnalysisState> request_;
   bool scroll_to_bottom_ = true;
+  int current_session_ = 0;         // 0 = most recent
+  static constexpr int kMaxSessions = 5;
 };
 
 }  // namespace
