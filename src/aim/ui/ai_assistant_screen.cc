@@ -112,9 +112,11 @@ class AiAssistantScreen : public UiScreen {
           messages_.push_back({false, response});
           ExecuteAction(response);
           SaveMemory();
+          scroll_to_bottom_ = true;
         } else {
           messages_.push_back({false, "AI request failed: " + request_->error});
           SaveMemory();
+          scroll_to_bottom_ = true;
         }
         request_.reset();
       }
@@ -134,23 +136,34 @@ class AiAssistantScreen : public UiScreen {
     if (!input) return;
     std::string magic;
     std::getline(input, magic);
+    // Strip any trailing \r so the check works on both Windows and Linux.
+    if (!magic.empty() && magic.back() == '\r') magic.pop_back();
     if (magic != "FPSAIMFORGE_AI_CHAT_V1") return;
     constexpr std::size_t kMaxMemoryFileBytes = 2U * 1024U * 1024U;
-    constexpr std::size_t kMaxMessageBytes = 256U * 1024U;
     std::error_code file_size_ec;
     const auto file_size = std::filesystem::file_size(path, file_size_ec);
     if (file_size_ec || file_size > kMaxMemoryFileBytes) {
       return;
     }
-    std::size_t total_bytes = 0;
     while (input.good()) {
+      // Skip blank / separator lines between messages.
       char role = 0;
-      input.get(role);
+      while (input.good()) {
+        input.get(role);
+        if (!input) goto done;
+        if (role == 'U' || role == 'A') break;
+        // Not a role byte — skip until end of line and try again.
+        if (role != '\n' && role != '\r') {
+          std::string dummy;
+          std::getline(input, dummy);
+        }
+      }
       if (!input || (role != 'U' && role != 'A')) break;
       if (input.peek() != ' ') break;
       input.get();
       std::string size_text;
       std::getline(input, size_text);
+      if (!size_text.empty() && size_text.back() == '\r') size_text.pop_back();
       if (size_text.empty()) break;
       size_t size = 0;
       try {
@@ -158,13 +171,15 @@ class AiAssistantScreen : public UiScreen {
       } catch (...) {
         break;
       }
+      if (size == 0 || size > 512U * 1024U) break;
       std::string text(size, '\0');
       input.read(text.data(), static_cast<std::streamsize>(size));
-      if (input.gcount() != static_cast<std::streamsize>(size)) break;
-      if (input.peek() == '\n') input.get();
-      total_bytes += size;
+      if (static_cast<size_t>(input.gcount()) != size) break;
+      // Consume the trailing newline separator written by SaveMemory.
+      while (input.peek() == '\n' || input.peek() == '\r') input.get();
       messages_.push_back({role == 'U', std::move(text)});
     }
+    done:;
   }
 
   void SaveMemory() {
@@ -194,7 +209,11 @@ class AiAssistantScreen : public UiScreen {
   void DrawContent() {
     const float char_x = ImGui::GetFontSize();
 
-    ImGui::Text("AI Coach");
+    // ── Header row ──────────────────────────────────────────────────────────
+    {
+      auto header_font = app_.font_manager().UseMedium();
+      ImGui::Text("AI Coach");
+    }
     ImGui::SameLine();
     ImGui::TextDisabled("NVIDIA NIM");
     ImGui::SameLine();
@@ -242,39 +261,59 @@ class AiAssistantScreen : public UiScreen {
       return;
     }
 
-    if (ImGui::BeginChild("ChatHistory", ImVec2(0, -char_x * 8), true)) {
-      for (const auto& message : messages_) {
-        ImGui::PushStyleColor(
-            ImGuiCol_Text,
-            message.user ? ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]
-                         : ImGui::GetStyle().Colors[ImGuiCol_Text]);
-        std::string label = message.user ? "You: " : "AI: ";
-        label += message.text;
-        ImGui::TextWrapped("%s", label.c_str());
-        ImGui::PopStyleColor();
+    bool scroll_to_bottom = false;
+    if (ImGui::BeginChild("ChatHistory", ImVec2(0, -char_x * 9), true)) {
+      for (size_t i = 0; i < messages_.size(); ++i) {
+        const auto& message = messages_[i];
+        ImGui::PushID(static_cast<int>(i));
+        if (message.user) {
+          ImGui::PushStyleColor(ImGuiCol_Text,
+              ImGui::GetStyle().Colors[ImGuiCol_ButtonHovered]);
+          ImGui::TextWrapped("You: %s", message.text.c_str());
+          ImGui::PopStyleColor();
+        } else {
+          ImGui::PushStyleColor(ImGuiCol_Text,
+              ImGui::GetStyle().Colors[ImGuiCol_Text]);
+          ImGui::TextDisabled("AI");
+          ImGui::SameLine();
+          ImGui::TextWrapped("%s", message.text.c_str());
+          ImGui::PopStyleColor();
+        }
         ImGui::Spacing();
+        ImGui::PopID();
       }
       if (request_) {
         ImGui::TextDisabled("AI is thinking...");
+        scroll_to_bottom = true;
+      }
+      // Auto-scroll to bottom when new messages arrive.
+      if (scroll_to_bottom_ || scroll_to_bottom) {
+        ImGui::SetScrollHereY(1.0f);
+        scroll_to_bottom_ = false;
       }
     }
     ImGui::EndChild();
 
     ImGui::Spacing();
-    ImGui::InputTextMultiline("##AiInput",
-                              &input_,
-                              ImVec2(-char_x * 9, char_x * 5),
-                              ImGuiInputTextFlags_EnterReturnsTrue);
+    // Reserve space for Send + Back buttons on the right.
+    float btn_width = char_x * 7;
+    float input_width = ImGui::GetContentRegionAvail().x - btn_width * 2 - ImGui::GetStyle().ItemSpacing.x * 2;
+    ImGui::SetNextItemWidth(input_width);
+    bool enter_pressed = ImGui::InputTextMultiline(
+        "##AiInput", &input_, ImVec2(input_width, char_x * 5),
+        ImGuiInputTextFlags_CtrlEnterForNewLine);
     ImGui::SameLine();
+    ImGui::BeginGroup();
     ImGui::BeginDisabled(request_ != nullptr || input_.empty());
-    if (ImGui::Button("Send", ImVec2(char_x * 7, char_x * 5))) {
+    if (ImGui::Button("Send", ImVec2(btn_width, char_x * 2.5f)) || (enter_pressed && !input_.empty())) {
       SendMessage();
+      scroll_to_bottom_ = true;
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Back")) {
+    if (ImGui::Button("Back", ImVec2(btn_width, char_x * 2.5f))) {
       PopSelf();
     }
+    ImGui::EndGroup();
   }
 
   std::string BuildAppContext(const std::string& user_text) {
@@ -518,6 +557,7 @@ class AiAssistantScreen : public UiScreen {
   std::vector<ChatMessage> messages_;
   std::string input_;
   std::shared_ptr<NimAnalysisState> request_;
+  bool scroll_to_bottom_ = true;
 };
 
 }  // namespace
