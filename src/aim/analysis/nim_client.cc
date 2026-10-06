@@ -589,4 +589,69 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
   return state;
 }
 
+std::shared_ptr<ReplayExportState> StartReplayExportToMp4(
+    const std::vector<std::filesystem::path>& image_paths,
+    const std::filesystem::path& output_path,
+    int capture_fps) {
+  auto state = std::make_shared<ReplayExportState>();
+  state->output_path = output_path;
+
+  if (image_paths.empty()) {
+    std::lock_guard lock(state->mutex);
+    state->done = true;
+    state->error = "No frames were captured for export.";
+    return state;
+  }
+
+  std::thread([state, image_paths, output_path, capture_fps]() {
+    std::error_code ec;
+    std::filesystem::create_directories(output_path.parent_path(), ec);
+
+    const auto parent = image_paths.front().parent_path();
+    const auto log_path = output_path.string() + ".ffmpeg.log";
+
+    std::filesystem::path ffmpeg_path;
+#ifdef _WIN32
+    if (const char* base_path = SDL_GetBasePath(); base_path != nullptr) {
+      ffmpeg_path = std::filesystem::path(base_path) / "ffmpeg.exe";
+      SDL_free(const_cast<char*>(base_path));
+    }
+    if (ffmpeg_path.empty() || !std::filesystem::exists(ffmpeg_path)) {
+      ffmpeg_path = "ffmpeg.exe";
+    }
+#else
+    ffmpeg_path = "ffmpeg";
+#endif
+
+    const std::string command =
+        "\"" + CurlConfigEscape(ffmpeg_path.string()) +
+        "\" -hide_banner -loglevel error -y -framerate " + std::to_string(capture_fps) +
+        " -i \"" + CurlConfigEscape((parent / "frame_%04d.png").string()) +
+        "\" -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -movflags +faststart \"" +
+        CurlConfigEscape(output_path.string()) +
+        "\" > \"" + CurlConfigEscape(log_path) + "\" 2>&1";
+
+    const int exit_code = RunCommandNoWindow(command);
+    std::filesystem::remove(log_path, ec);
+
+    // Always clean up frame PNGs.
+    for (const auto& image_path : image_paths) {
+      std::filesystem::remove(image_path, ec);
+    }
+
+    std::lock_guard lock(state->mutex);
+    state->done = true;
+    if (exit_code != 0 || !std::filesystem::exists(output_path)) {
+      state->success = false;
+      state->error =
+          "FFmpeg failed to encode the replay. "
+          "Make sure ffmpeg is available and the exports folder is writable.";
+    } else {
+      state->success = true;
+    }
+  }).detach();
+
+  return state;
+}
+
 }  // namespace aim

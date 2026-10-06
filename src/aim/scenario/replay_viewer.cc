@@ -583,7 +583,14 @@ class ReplayViewerScreen : public Screen {
         }
       }
       if (finish_capture) {
-        capture_state_->nim_state = StartNimVideoAnalysisFromFrames(prompt, paths);
+        if (!capture_state_->export_output_path.empty()) {
+          // Export mode: encode to MP4, skip NIM.
+          capture_state_->export_state = StartReplayExportToMp4(
+              paths, capture_state_->export_output_path,
+              capture_state_->export_capture_fps);
+        } else {
+          capture_state_->nim_state = StartNimVideoAnalysisFromFrames(prompt, paths);
+        }
         PopSelf();
       }
     }
@@ -670,6 +677,22 @@ std::unique_ptr<Screen> CreateReplayViewerScreen(std::shared_ptr<Replay> replay,
                                                     Application* app,
                                                     std::shared_ptr<VisualReplayCaptureState> capture_state) {
   return std::make_unique<ReplayViewerScreen>(std::move(replay), app, std::move(capture_state));
+}
+
+std::unique_ptr<Screen> CreateReplayExportViewerScreen(
+    std::shared_ptr<Replay> replay,
+    Application* app,
+    std::shared_ptr<ReplayExportCaptureState> export_capture_state) {
+  // Build a VisualReplayCaptureState in export mode.
+  // The viewer will encode frames to export_output_path instead of sending to NIM.
+  auto vis = std::make_shared<VisualReplayCaptureState>();
+  vis->export_output_path = export_capture_state->output_path;
+  vis->export_capture_fps = 30;
+  // Bridge: share the export_state pointer so the stats screen can poll it.
+  // We wire it after encoding starts via the export_state field on vis.
+  // The stats screen holds export_capture_state and polls export_capture_state->vis_capture.
+  export_capture_state->vis_capture = vis;
+  return std::make_unique<ReplayViewerScreen>(std::move(replay), app, std::move(vis));
 }
 
 }  // namespace aim
