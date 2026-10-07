@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -632,9 +633,8 @@ std::shared_ptr<ReplayExportState> StartReplayExportToMp4(
         "\" > \"" + CurlConfigEscape(log_path) + "\" 2>&1";
 
     const int exit_code = RunCommandNoWindow(command);
-    std::filesystem::remove(log_path, ec);
 
-    // Always clean up frame PNGs.
+    // Always clean up frame PNGs regardless of outcome.
     for (const auto& image_path : image_paths) {
       std::filesystem::remove(image_path, ec);
     }
@@ -643,10 +643,32 @@ std::shared_ptr<ReplayExportState> StartReplayExportToMp4(
     state->done = true;
     if (exit_code != 0 || !std::filesystem::exists(output_path)) {
       state->success = false;
-      state->error =
-          "FFmpeg failed to encode the replay. "
-          "Make sure ffmpeg is available and the exports folder is writable.";
+      // Read the ffmpeg log to surface the real error to the user.
+      std::string log_content;
+      if (std::ifstream log_file(log_path); log_file) {
+        std::ostringstream oss;
+        oss << log_file.rdbuf();
+        log_content = oss.str();
+        // Trim to a reasonable length.
+        if (log_content.size() > 400) {
+          log_content = log_content.substr(0, 400) + "...";
+        }
+      }
+      std::filesystem::remove(log_path, ec);
+      if (!log_content.empty()) {
+        state->error = std::format(
+            "FFmpeg failed (exit {}):\n{}\n\n"
+            "Make sure ffmpeg.exe is in the same folder as FpsAimForge.exe.",
+            exit_code, log_content);
+      } else {
+        state->error = std::format(
+            "FFmpeg failed (exit {}). "
+            "Make sure ffmpeg.exe is in the same folder as FpsAimForge.exe "
+            "and the replays folder is writable.",
+            exit_code);
+      }
     } else {
+      std::filesystem::remove(log_path, ec);
       state->success = true;
     }
   }).detach();
