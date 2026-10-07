@@ -418,9 +418,14 @@ class StatsScreen : public UiScreen {
       return;
     }
     if (!es->success) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
       ImGui::TextWrapped("Export failed: %s", es->error.c_str());
+      ImGui::PopStyleColor();
     } else {
-      ImGui::TextWrapped("Exported: %s", es->output_path.string().c_str());
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+      ImGui::Text("Export saved!");
+      ImGui::PopStyleColor();
+      ImGui::TextWrapped("%s", es->output_path.string().c_str());
       if (ImGui::Button("Open folder")) {
         OpenFolderInExplorer(es->output_path.parent_path());
       }
