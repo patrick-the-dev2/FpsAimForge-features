@@ -19,6 +19,7 @@
 #include "aim/analysis/nim_client.h"
 #include "aim/analysis/scenario_analysis.h"
 #include "aim/core/perf.h"
+#include "aim/common/files.h"
 #include "aim/core/replay_manager.h"
 #include "aim/core/scenario_manager.h"
 #include "aim/core/settings_manager.h"
@@ -305,6 +306,7 @@ class StatsScreen : public UiScreen {
       ImGui::TableNextColumn();
 
       if (ImGui::BeginChild("PrimaryContent")) {
+        DrawExportStatus();
         if (selected_screen_ == SelectedScreen::STATS) {
           DrawStatsPanel();
         }
@@ -342,6 +344,10 @@ class StatsScreen : public UiScreen {
                                       false)) {
       PushNextScreen(CreateReplayViewerScreen(replay_, &app_));
     }
+    if (replay_ && ImGui::Selectable(std::format("{} Export MP4", icons::kMovie).c_str(),
+                                      false)) {
+      StartReplayMp4Export();
+    }
     if (replay_ && ImGui::Selectable(
                         std::format("{} Detailed Analysis", icons::kSmartToy).c_str(),
                         selected_screen_ == SelectedScreen::ANALYSIS)) {
@@ -358,6 +364,69 @@ class StatsScreen : public UiScreen {
         selected_screen_ = SelectedScreen::PERF;
       }
     }
+  }
+
+  void StartReplayMp4Export() {
+    if (!replay_ || export_capture_state_) return;
+    export_capture_state_ = std::make_shared<ReplayExportCaptureState>();
+    // Build output path: <userdata>/replays/<scenario>_<run_id>.mp4
+    const std::string safe_name = [&] {
+      std::string s = scenario_name_;
+      for (char& c : s) {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<' || c == '>' || c == '|' || c == ' ') {
+          c = '_';
+        }
+      }
+      return s;
+    }();
+    const auto exports_dir = app_.file_system().GetUserDataPath("replays");
+    std::error_code ec;
+    std::filesystem::create_directories(exports_dir, ec);
+    export_capture_state_->output_path =
+        exports_dir / std::format("{}_{}.mp4", safe_name, run_id_);
+    PushNextScreen(CreateReplayExportViewerScreen(replay_, &app_, export_capture_state_));
+  }
+
+  void DrawExportStatus() {
+    if (!export_capture_state_) return;
+    auto vis = export_capture_state_->vis_capture;
+    if (!vis) {
+      ImGui::TextDisabled("Preparing export...");
+      return;
+    }
+    std::lock_guard lock(vis->mutex);
+    if (vis->active) {
+      ImGui::TextDisabled("Capturing replay frames...");
+      ImGui::ProgressBar(vis->progress, ImVec2(-1, 0));
+      return;
+    }
+    if (!vis->error.empty()) {
+      ImGui::TextWrapped("Export failed: %s", vis->error.c_str());
+      if (ImGui::Button("Dismiss")) export_capture_state_.reset();
+      return;
+    }
+    auto es = vis->export_state;
+    if (!es) {
+      ImGui::TextDisabled("Encoding...");
+      return;
+    }
+    std::lock_guard elock(es->mutex);
+    if (!es->done) {
+      ImGui::TextDisabled("Encoding MP4...");
+      ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(-1, 0), "Encoding...");
+      return;
+    }
+    if (!es->success) {
+      ImGui::TextWrapped("Export failed: %s", es->error.c_str());
+    } else {
+      ImGui::TextWrapped("Exported: %s", es->output_path.string().c_str());
+      if (ImGui::Button("Open folder")) {
+        OpenFolderInExplorer(es->output_path.parent_path());
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Dismiss")) export_capture_state_.reset();
   }
 
   void DrawHistoryPanel() {
@@ -999,6 +1068,7 @@ class StatsScreen : public UiScreen {
   std::optional<ScenarioAnalysis> analysis_;
   std::shared_ptr<NimAnalysisState> nim_state_;
   std::shared_ptr<VisualReplayCaptureState> visual_capture_state_;
+  std::shared_ptr<ReplayExportCaptureState> export_capture_state_;
   float score_target_ = 0;
   bool delay_display_;
   std::unique_ptr<TopBar> top_bar_ = CreateTopBar();

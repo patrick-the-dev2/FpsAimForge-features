@@ -28,4 +28,20 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
 bool IsNimConfigured();
 std::string GetNimConfigurationHint();
 
+// Export replay frames to an MP4 file at output_path.
+// Cleans up the frame PNGs after encoding regardless of success.
+// On success, state->success = true and state->response = output_path.string().
+// On failure, state->success = false and state->error describes what went wrong.
+struct ReplayExportState {
+  mutable std::mutex mutex;
+  bool done = false;
+  bool success = false;
+  std::filesystem::path output_path;
+  std::string error;
+};
+std::shared_ptr<ReplayExportState> StartReplayExportToMp4(
+    const std::vector<std::filesystem::path>& image_paths,
+    const std::filesystem::path& output_path,
+    int capture_fps);
+
 }  // namespace aim
