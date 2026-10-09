@@ -84,6 +84,21 @@ std::string CurlConfigEscape(const std::string& value) {
   return result;
 }
 
+// For ffmpeg shell commands: use forward slashes (ffmpeg accepts them on
+// Windows) and wrap in quotes. Do NOT use CurlConfigEscape here — that
+// doubles backslashes which breaks Windows paths in cmd.exe.
+std::string FfmpegPath(const std::filesystem::path& p) {
+  std::string s = p.generic_string();  // forward slashes
+  // Escape any double-quotes in the path (rare but possible).
+  std::string result;
+  result.reserve(s.size() + 2);
+  for (char c : s) {
+    if (c == '"') result += '\\';
+    result += c;
+  }
+  return result;
+}
+
 #ifdef _WIN32
 int RunCommandNoWindow(const std::string& command) {
   std::string mutable_command = command;
@@ -545,11 +560,12 @@ std::shared_ptr<NimAnalysisState> StartNimVideoAnalysisFromFrames(
 #endif
 
     const std::string command =
-        "\"" + CurlConfigEscape(ffmpeg_path.string()) +
+        "\"" + FfmpegPath(ffmpeg_path) +
         "\" -hide_banner -loglevel error -y -framerate 4 -i \"" +
-        CurlConfigEscape((parent / "frame_%04d.png").string()) +
+        FfmpegPath(parent / "frame_%04d.png") +
         "\" -c:v libx264 -preset ultrafast -crf 30 -pix_fmt yuv420p -movflags +faststart \"" +
-        CurlConfigEscape(video_path) + "\" > \"" + CurlConfigEscape(log_path) + "\" 2>&1";
+        FfmpegPath(std::filesystem::path(video_path)) + "\" > \"" +
+        FfmpegPath(std::filesystem::path(log_path)) + "\" 2>&1";
     const int exit_code = RunCommandNoWindow(command);
     std::error_code ec;
     std::filesystem::remove(log_path, ec);
@@ -625,12 +641,12 @@ std::shared_ptr<ReplayExportState> StartReplayExportToMp4(
 #endif
 
     const std::string command =
-        "\"" + CurlConfigEscape(ffmpeg_path.string()) +
+        "\"" + FfmpegPath(ffmpeg_path) +
         "\" -hide_banner -loglevel error -y -framerate " + std::to_string(capture_fps) +
-        " -i \"" + CurlConfigEscape((parent / "frame_%04d.png").string()) +
-        "\" -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p -movflags +faststart \"" +
-        CurlConfigEscape(output_path.string()) +
-        "\" > \"" + CurlConfigEscape(log_path) + "\" 2>&1";
+        " -i \"" + FfmpegPath(parent / "frame_%04d.png") +
+        "\" -c:v libx264 -preset fast -crf 18 -pix_fmt yuv420p -movflags +faststart \"" +
+        FfmpegPath(output_path) +
+        "\" > \"" + FfmpegPath(std::filesystem::path(log_path)) + "\" 2>&1";
 
     const int exit_code = RunCommandNoWindow(command);
 

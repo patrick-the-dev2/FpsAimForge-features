@@ -215,12 +215,29 @@ class StatsScreen : public UiScreen {
     if (replay_ && replay_->scores.size() > 0) {
       scores_over_time_ = ScoresOverTime(replay_->scores);
     }
+
+    // If the player had "AI watch" toggled on, auto-start the visual capture.
+    if (app_.state().ai_watch_enabled && replay_ && IsNimConfigured()) {
+      app_.state().ai_watch_enabled = false;  // consume the flag — one shot
+      // Analysis needs to be computed first; we defer to OnAttachUi.
+      ai_watch_pending_ = true;
+    }
   }
 
  protected:
   void OnAttachUi() override {
     if (scenario_name_ != app_.scenario_manager().GetCurrentScenarioName()) {
       app_.scenario_manager().SetCurrentScenario(scenario_name_);
+    }
+    // Auto-start AI watch capture if flagged from the play button toggle.
+    if (ai_watch_pending_ && !visual_capture_state_ && replay_) {
+      ai_watch_pending_ = false;
+      if (!analysis_) {
+        analysis_ = AnalyzeScenarioReplay(*replay_);
+      }
+      visual_capture_state_ = std::make_shared<VisualReplayCaptureState>();
+      visual_capture_state_->prompt = BuildNimAnalysisPrompt(*analysis_, details_.all_stats);
+      PushNextScreen(CreateReplayViewerScreen(replay_, &app_, visual_capture_state_));
     }
     playlist_run_ = app_.playlist_manager().GetCurrentRun();
     if (!playlist_run_) {
@@ -1073,6 +1090,7 @@ class StatsScreen : public UiScreen {
   std::optional<ScenarioAnalysis> analysis_;
   std::shared_ptr<NimAnalysisState> nim_state_;
   std::shared_ptr<VisualReplayCaptureState> visual_capture_state_;
+  bool ai_watch_pending_ = false;
   std::shared_ptr<ReplayExportCaptureState> export_capture_state_;
   float score_target_ = 0;
   bool delay_display_;

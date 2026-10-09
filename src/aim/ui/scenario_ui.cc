@@ -10,6 +10,7 @@
 #include "aim/common/resource_name.h"
 #include "aim/common/times.h"
 #include "aim/common/util.h"
+#include "aim/analysis/nim_client.h"
 #include "aim/core/application.h"
 #include "aim/core/bundle_manager.h"
 #include "aim/core/history_manager.h"
@@ -266,6 +267,23 @@ class ScenariosComponentImpl : public ScenariosComponent {
     ImGui::Spacing();
     if (ImGui::Button(std::format("{}", icons::kPlayArrow))) {
       app_.state().scenario_run_option = ScenarioRunOption::START_CURRENT;
+    }
+    if (IsNimConfigured()) {
+      ImGui::SameLine();
+      bool& ai_watch = app_.state().ai_watch_enabled;
+      if (ai_watch) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+      }
+      if (ImGui::Button(std::format("{} AI", icons::kAutoAwesome).c_str())) {
+        ai_watch = !ai_watch;
+      }
+      if (ai_watch) {
+        ImGui::PopStyleColor();
+      }
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("AI coaching ON — after this run the AI will\n"
+                          "watch your replay and give you plain English feedback.");
+      }
     }
     ImGui::SameLine();
     ImGui::Text(item.name);

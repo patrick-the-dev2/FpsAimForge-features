@@ -460,44 +460,64 @@ std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis) {
 std::string BuildNimAnalysisPrompt(const ScenarioAnalysis& analysis,
                                    std::span<const StatsDbRow> history) {
   std::ostringstream prompt;
-  prompt << "You are an FPS aim coach reviewing one completed aim-trainer scenario. "
-            "Use only the supplied replay-derived facts. Do not invent events or claim visual "
-            "information that is not present. Give a practical diagnostic.\n\n";
-  prompt << "Current run:\n" << analysis.deterministic_summary << "\n";
-  prompt << "Exact cm/360: " << std::format("{:.3f}", analysis.cm_per_360) << "\n";
-  prompt << "Target snapshots: "
-         << (analysis.has_target_snapshots ? "available" : "not available") << "\n";
-  prompt << "Tracking diagnostics:\n" << analysis.tracking_summary << "\n";
-  prompt << "Replay timeline sample:\n" << analysis.timeline_summary << "\n\n";
 
-  prompt << "Persisted run history (latest 50 runs):\n";
-  if (history.empty()) {
-    prompt << "No persisted run history was supplied.\n";
-  } else {
-    const size_t start = history.size() > 50 ? history.size() - 50 : 0;
+  prompt <<
+    "You are a friendly FPS aim coach talking directly to a player who wants to improve. "
+    "Your job is to tell them IN PLAIN ENGLISH what they did wrong and how to fix it — "
+    "like a coach sitting next to them, not a data scientist. "
+    "NEVER use raw numbers like deg/s, degrees, ms, or percentages in your feedback. "
+    "Instead say things like: 'your crosshair was drifting left of the target most of the time', "
+    "'you kept losing the target after fast direction changes and took too long to get back on', "
+    "'your aim is too twitchy — you're overcorrecting every small movement'. "
+    "Be specific about WHAT the player felt and DID, not what the numbers say. "
+    "Use only the supplied data — do not invent events.\n\n";
+
+  prompt << "Scenario data (internal — do NOT quote these numbers in your reply):\n";
+  prompt << analysis.deterministic_summary << "\n";
+  prompt << "Tracking: " << analysis.tracking_summary << "\n";
+  prompt << "Timeline: " << analysis.timeline_summary << "\n\n";
+
+  if (!history.empty()) {
+    prompt << "Recent history (" << std::min(history.size(), size_t(10)) << " runs):\n";
+    const size_t start = history.size() > 10 ? history.size() - 10 : 0;
     for (size_t i = start; i < history.size(); ++i) {
       prompt << "- " << FormatHistoryRow(history[i]) << "\n";
     }
+    prompt << "\n";
   }
 
-  prompt << "\nDetected findings:\n";
-  for (const auto& finding : analysis.findings) {
-    prompt << "- [" << AnalysisSeverityLabel(finding.severity) << "] "
-           << finding.category << ": " << finding.title << " - " << finding.detail;
-    if (finding.timestamp_seconds >= 0) {
-      prompt << " (around " << FormatTime(finding.timestamp_seconds) << ")";
+  if (!analysis.findings.empty()) {
+    prompt << "Detected issues:\n";
+    for (const auto& finding : analysis.findings) {
+      prompt << "- " << finding.title << ": " << finding.detail << "\n";
     }
     prompt << "\n";
   }
-  prompt << "\nReturn these headings exactly:\n"
-            "AI Overview\n"
-            "What Happened\n"
-            "Weak Points\n"
-            "Where It Failed\n"
-            "What To Practice Next\n"
-            "Replay Review\n"
-            "Keep advice specific to the measured run and compare against history when useful. "
-            "Never infer a cm/360 that is not explicitly provided.";
+
+  prompt <<
+    "Now write your coaching response using EXACTLY these section headings:\n\n"
+    "How It Went\n"
+    "(2-3 sentences. Tell them how the run felt overall — were they mostly on target or "
+    "struggling? Did they improve or get worse as the scenario went on? Talk like a coach, not a report.)\n\n"
+    "What's Holding You Back\n"
+    "(The main thing hurting their score. One clear problem explained in plain words. "
+    "Example: 'The biggest issue is that your crosshair keeps sliding past the target "
+    "when it changes direction — you're reacting a bit late and then swinging too far.')\n\n"
+    "What Your Aim Feels Like Right Now\n"
+    "(Describe how their aim FEELS and LOOKS from the data — smooth? Twitchy? Tense? "
+    "Drifting? Sluggish? Overcorrecting? Be honest but encouraging.)\n\n"
+    "What To Fix This Session\n"
+    "(One or two SPECIFIC things to try RIGHT NOW. Not 'practice more tracking' — "
+    "give them an actual mental cue or technique. "
+    "Example: 'Try to move your crosshair SLOWER than the target feels like it needs — "
+    "trust your wrist to catch up instead of chasing it.')\n\n"
+    "Next Scenario To Play\n"
+    "(Recommend ONE specific type of scenario to work on the weakness you identified. "
+    "Be specific about why it will help them.)\n\n"
+    "Do NOT use bullet points. Write in short paragraphs. "
+    "Keep the whole response under 300 words. "
+    "Talk directly to the player — use 'you' and 'your'.";
+
   return prompt.str();
 }
 
