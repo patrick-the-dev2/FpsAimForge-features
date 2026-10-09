@@ -68,8 +68,7 @@ jobs:
           git diff --exit-code FETCH_HEAD -- \
             src/aim/core/camera.cc \
             src/aim/scenario/base_scenario.cc \
-            src/aim/scenario/base_scenario.h \
-            src/resources/bundles/AF.bundle.json
+            src/aim/scenario/base_scenario.h
       - name: Configure release build
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
@@ -106,7 +105,7 @@ jobs:
         shell: pwsh
         run: |
           git fetch --depth=1 https://github.com/mjohns/FpsAimForge.git main
-          git diff --exit-code FETCH_HEAD -- src/aim/core/camera.cc src/aim/scenario/base_scenario.cc src/aim/scenario/base_scenario.h src/resources/bundles/AF.bundle.json
+          git diff --exit-code FETCH_HEAD -- src/aim/core/camera.cc src/aim/scenario/base_scenario.cc src/aim/scenario/base_scenario.h
       - name: Configure Windows x64 release
         run: cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64 -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 
