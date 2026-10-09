@@ -33,6 +33,9 @@ class ApplicationState {
   std::optional<ScenarioRunOption> scenario_run_option;
   std::optional<AppScreen> go_to_app_screen;
 
+  // When true the stats screen auto-starts AI visual analysis after the next run.
+  bool ai_watch_enabled = false;
+
   std::optional<RunPerformanceStats> GetPerformanceStats(const std::string& scenario_name,
                                                          i64 run_id);
   void AddPerformanceStats(const std::string& scenario_name,
