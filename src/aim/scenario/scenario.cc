@@ -199,6 +199,9 @@ void Scenario::OnEvents(std::span<SDL_Event> events) {
   float yrel = 0;
   bool has_mouse_move = false;
   for (const SDL_Event& event : events) {
+    if (is_running()) {
+      raw_telemetry_.Record(event, timer_.GetElapsedMicros());
+    }
     if (event.type == SDL_EVENT_MOUSE_MOTION && (is_running() || is_start_countdown())) {
       current_times_.mouse_events_count++;
       xrel += event.motion.xrel;
@@ -642,6 +645,21 @@ void Scenario::OnRunningTick() {
 }
 
 void Scenario::HandleScenarioDone() {
+  if (!from_scenario_editor_) {
+    const auto export_path = app_.file_system().GetUserDataPath("aim-telemetry") /
+        std::format("aim-telemetry-{}.txt", GetNowEpochMicros());
+    const Replay* replay_data = replay_ ? replay_->replay().get() : nullptr;
+    if (!raw_telemetry_.ExportText(export_path,
+                                   scenario_name_,
+                                   effective_cm_per_360_,
+                                   app_.settings_manager().GetDpi(),
+                                   timer_.GetElapsedSeconds(),
+                                   replay_data)) {
+      Logger::get()->warn("Failed to export local raw aim telemetry to {}", export_path.string());
+    } else {
+      Logger::get()->info("Saved local raw aim telemetry to {}", export_path.string());
+    }
+  }
   if (from_scenario_editor_) {
     PopSelf();
     return;
