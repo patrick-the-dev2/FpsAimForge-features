@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -82,6 +83,7 @@ class RawTelemetryRecorder {
 
     std::ofstream out(path, std::ios::out | std::ios::trunc);
     if (!out) return false;
+    out.precision(std::numeric_limits<float>::max_digits10);
     out << "FPS AIM FORGE RAW AIM TELEMETRY\n"
         << "schema_version=1\n"
         << "exported_at_epoch_ms="
@@ -137,6 +139,11 @@ class RawTelemetryRecorder {
         out << i << '\t' << frame << '\t' << channel << '\t' << valid << '\t'
             << t.position.x << '\t' << t.position.y << '\t' << t.position.z << '\t'
             << t.radius << '\t' << (static_cast<float>(t.health) / 255.0f * 100.0f) << '\n';
+      }
+      out << "\n[SCORE_SAMPLES]\n"
+          << "sample_index\tscore\n";
+      for (std::size_t i = 0; i < replay->scores.size(); ++i) {
+        out << i << '\t' << replay->scores[i] << '\n';
       }
       out << "\n[REPLAY_EVENTS]\n"
           << "time_micros\tevent_type\tvalue\n";
