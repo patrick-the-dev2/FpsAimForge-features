@@ -127,6 +127,17 @@ class RawTelemetryRecorder {
             << static_cast<int>(t.initial_data.health) << '\t' << t.is_ghost << '\t'
             << t.has_health << '\n';
       }
+      out << "\n[TARGET_FRAME_SAMPLES]\n"
+          << "sample_index\tframe\tchannel\tvalid\tx\ty\tz\tradius\thealth_percent\n";
+      for (std::size_t i = 0; i < replay->target_data.size(); ++i) {
+        const ReplayTargetData& t = replay->target_data[i];
+        const bool valid = t.radius >= 0.0f;
+        const std::size_t frame = replay->num_targets > 0 ? i / replay->num_targets : 0;
+        const std::size_t channel = replay->num_targets > 0 ? i % replay->num_targets : 0;
+        out << i << '\t' << frame << '\t' << channel << '\t' << valid << '\t'
+            << t.position.x << '\t' << t.position.y << '\t' << t.position.z << '\t'
+            << t.radius << '\t' << (static_cast<float>(t.health) / 255.0f * 100.0f) << '\n';
+      }
       out << "\n[REPLAY_EVENTS]\n"
           << "time_micros\tevent_type\tvalue\n";
       for (const ReplayEvent& e : replay->events) {
