@@ -133,7 +133,8 @@ jobs:
 
           # Validate the download against the digest published by GitHub for this release asset.
           # Fail closed if the release metadata does not contain a SHA-256 digest.
-          $publishedDigest = (gh api repos/SubtitleEdit/support-files/releases/tags/ffmpeg-v9-2 --jq '.assets[] | select(.name == "ffmpeg902.zip") | .digest')
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/SubtitleEdit/support-files/releases/tags/ffmpeg-v9-2" -Headers @{ "User-Agent" = "FpsAimForge-release-build" }
+          $publishedDigest = ($release.assets | Where-Object { $_.name -eq "ffmpeg902.zip" } | Select-Object -First 1 -ExpandProperty digest)
           if ([string]::IsNullOrWhiteSpace($publishedDigest) -or $publishedDigest -notmatch '^sha256:[0-9a-fA-F]{64}$') {
             throw "GitHub release metadata did not provide a SHA-256 digest for ffmpeg902.zip."
           }
