@@ -1,0 +1,173 @@
+#pragma once
+
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "SDL3/SDL.h"
+#include "aim/scenario/replay.h"
+
+namespace aim {
+
+// Bounded, in-memory capture. No filesystem I/O occurs on the input/event path.
+class RawTelemetryRecorder {
+ public:
+  struct Event {
+    std::uint64_t sdl_timestamp_ns = 0;
+    std::int64_t run_time_micros = 0;
+    std::uint32_t type = 0;
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t data1 = 0;
+    std::int32_t data2 = 0;
+  };
+
+  RawTelemetryRecorder() { events_.reserve(kInitialCapacity); }
+
+  void Record(const SDL_Event& event, std::int64_t run_time_micros) {
+    if (!IsRelevant(event.type)) return;
+    if (events_.size() >= kMaxEvents) {
+      ++dropped_events_;
+      return;
+    }
+
+    Event record;
+    record.sdl_timestamp_ns = event.common.timestamp;
+    record.run_time_micros = run_time_micros;
+    record.type = event.type;
+    switch (event.type) {
+      case SDL_EVENT_MOUSE_MOTION:
+        record.x = event.motion.xrel;
+        record.y = event.motion.yrel;
+        record.data1 = event.motion.x;
+        record.data2 = event.motion.y;
+        break;
+      case SDL_EVENT_MOUSE_BUTTON_DOWN:
+      case SDL_EVENT_MOUSE_BUTTON_UP:
+        record.x = event.button.button;
+        record.y = event.button.clicks;
+        record.data1 = event.button.x;
+        record.data2 = event.button.y;
+        break;
+      case SDL_EVENT_MOUSE_WHEEL:
+        record.x = static_cast<std::int32_t>(event.wheel.x * 1000.0f);
+        record.y = static_cast<std::int32_t>(event.wheel.y * 1000.0f);
+        break;
+      case SDL_EVENT_KEY_DOWN:
+      case SDL_EVENT_KEY_UP:
+        record.x = static_cast<std::int32_t>(event.key.key);
+        record.y = event.key.repeat ? 1 : 0;
+        record.data1 = static_cast<std::int32_t>(event.key.scancode);
+        record.data2 = static_cast<std::int32_t>(event.key.mod);
+        break;
+      default:
+        return;
+    }
+    events_.push_back(record);
+  }
+
+  bool ExportText(const std::filesystem::path& path,
+                  std::string_view scenario_name,
+                  double cm_per_360,
+                  double dpi,
+                  double duration_seconds,
+                  const Replay* replay) const {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) return false;
+
+    std::ofstream out(path, std::ios::out | std::ios::trunc);
+    if (!out) return false;
+    out << "FPS AIM FORGE RAW AIM TELEMETRY\n"
+        << "schema_version=1\n"
+        << "exported_at_epoch_ms="
+        << std::chrono::duration_cast<std::chrono::milliseconds>(
+               std::chrono::system_clock::now().time_since_epoch()).count()
+        << "\nscenario=" << scenario_name
+        << "\ncm_per_360=" << cm_per_360
+        << "\ndpi=" << dpi
+        << "\nduration_seconds=" << duration_seconds
+        << "\nraw_input_events=" << events_.size()
+        << "\ndropped_input_events=" << dropped_events_
+        << "\ninput_timestamp_units=SDL timestamp nanoseconds (source clock); run_time_micros=active scenario timer microseconds"
+        << "\n\n[RAW_INPUT_EVENTS]\n"
+        << "index\tsdl_timestamp_ns\trun_time_micros\tevent_type\tx\ty\tdata1\tdata2\n";
+    for (std::size_t i = 0; i < events_.size(); ++i) {
+      const Event& e = events_[i];
+      out << i << '\t' << e.sdl_timestamp_ns << '\t' << e.run_time_micros << '\t'
+          << e.type << '\t' << e.x << '\t' << e.y << '\t' << e.data1 << '\t'
+          << e.data2 << '\n';
+    }
+
+    if (replay != nullptr) {
+      out << "\n[REPLAY_METADATA]\n"
+          << "replay_fps=" << replay->replay_fps
+          << "\nshot_type=" << static_cast<int>(replay->shot_type)
+          << "\nreplay_cm_per_360=" << replay->cm_per_360
+          << "\nreplay_event_count=" << replay->events.size()
+          << "\ntarget_metadata_count=" << replay->target_metadata.size()
+          << "\ncamera_samples=" << replay->pitch_yaws.size()
+          << "\ntarget_samples=" << replay->target_data.size()
+          << "\n\n[CAMERA_PITCH_YAW_SAMPLES]\n"
+          << "frame\tpitch\tyaw\n";
+      for (std::size_t i = 0; i < replay->pitch_yaws.size(); ++i) {
+        out << i << '\t' << replay->pitch_yaws[i].pitch << '\t'
+            << replay->pitch_yaws[i].yaw << '\n';
+      }
+      out << "\n[TARGET_LIFECYCLE]\n"
+          << "add_time_micros\ttarget_id\tdata_channel\tinitial_x\tinitial_y\tinitial_z\tradius\thealth\tis_ghost\thas_health\n";
+      for (const ReplayTargetMetadata& t : replay->target_metadata) {
+        out << t.add_time_micros << '\t' << t.target_id << '\t' << t.data_channel << '\t'
+            << t.initial_data.position.x << '\t' << t.initial_data.position.y << '\t'
+            << t.initial_data.position.z << '\t' << t.initial_data.radius << '\t'
+            << static_cast<int>(t.initial_data.health) << '\t' << t.is_ghost << '\t'
+            << t.has_health << '\n';
+      }
+      out << "\n[REPLAY_EVENTS]\n"
+          << "time_micros\tevent_type\tvalue\n";
+      for (const ReplayEvent& e : replay->events) {
+        out << e.time_micros << '\t' << static_cast<int>(e.type) << '\t';
+        switch (e.type) {
+          case ReplayEventType::REMOVE_TARGET:
+            out << e.data.target_id;
+            break;
+          case ReplayEventType::MOUSE_CLICK:
+            out << (e.data.is_hit ? "hit" : "miss");
+            break;
+          case ReplayEventType::PLAY_SOUND:
+            out << static_cast<int>(e.data.play_sound.sound);
+            break;
+        }
+        out << '\n';
+      }
+    }
+    out << "\n[DATA_QUALITY]\n"
+        << "events_dropped_due_to_capacity=" << dropped_events_
+        << "\nraw_input_capture_enabled=true\n"
+        << "note=No raw events were sent to any remote service by this exporter.\n";
+    out.flush();
+    return out.good();
+  }
+
+ private:
+  static constexpr std::size_t kInitialCapacity = 65536;
+  static constexpr std::size_t kMaxEvents = 500000;
+
+  static bool IsRelevant(std::uint32_t type) {
+    return type == SDL_EVENT_MOUSE_MOTION ||
+           type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+           type == SDL_EVENT_MOUSE_BUTTON_UP ||
+           type == SDL_EVENT_MOUSE_WHEEL ||
+           type == SDL_EVENT_KEY_DOWN ||
+           type == SDL_EVENT_KEY_UP;
+  }
+
+  std::vector<Event> events_;
+  std::uint64_t dropped_events_ = 0;
+};
+
+}  // namespace aim
