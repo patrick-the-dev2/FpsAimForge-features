@@ -20,10 +20,10 @@ class RawTelemetryRecorder {
     std::uint64_t sdl_timestamp_ns = 0;
     std::int64_t run_time_micros = 0;
     std::uint32_t type = 0;
-    std::int32_t x = 0;
-    std::int32_t y = 0;
-    std::int32_t data1 = 0;
-    std::int32_t data2 = 0;
+    float x = 0;
+    float y = 0;
+    float data1 = 0;
+    float data2 = 0;
   };
 
   RawTelemetryRecorder() { events_.reserve(kInitialCapacity); }
@@ -48,21 +48,21 @@ class RawTelemetryRecorder {
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
       case SDL_EVENT_MOUSE_BUTTON_UP:
-        record.x = event.button.button;
-        record.y = event.button.clicks;
+        record.x = static_cast<float>(event.button.button);
+        record.y = static_cast<float>(event.button.clicks);
         record.data1 = event.button.x;
         record.data2 = event.button.y;
         break;
       case SDL_EVENT_MOUSE_WHEEL:
-        record.x = static_cast<std::int32_t>(event.wheel.x * 1000.0f);
-        record.y = static_cast<std::int32_t>(event.wheel.y * 1000.0f);
+        record.x = event.wheel.x;
+        record.y = event.wheel.y;
         break;
       case SDL_EVENT_KEY_DOWN:
       case SDL_EVENT_KEY_UP:
-        record.x = static_cast<std::int32_t>(event.key.key);
-        record.y = event.key.repeat ? 1 : 0;
-        record.data1 = static_cast<std::int32_t>(event.key.scancode);
-        record.data2 = static_cast<std::int32_t>(event.key.mod);
+        record.x = static_cast<float>(event.key.key);
+        record.y = event.key.repeat ? 1.0f : 0.0f;
+        record.data1 = static_cast<float>(event.key.scancode);
+        record.data2 = static_cast<float>(event.key.mod);
         break;
       default:
         return;
