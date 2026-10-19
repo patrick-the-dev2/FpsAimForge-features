@@ -645,6 +645,9 @@ void Scenario::OnRunningTick() {
 }
 
 void Scenario::HandleScenarioDone() {
+  if (replay_) {
+    replay_->FillInMissingPitchYaws();
+  }
   if (!from_scenario_editor_) {
     const auto export_path = app_.file_system().GetUserDataPath("aim-telemetry") /
         std::format("aim-telemetry-{}.txt", GetNowEpochMicros());
@@ -693,7 +696,6 @@ void Scenario::HandleScenarioDone() {
     bool stats_saved = false;
 
     if (replay_) {
-      replay_->FillInMissingPitchYaws();
       replay_->replay()->cm_per_360 = effective_cm_per_360_;
       const std::string replay_data = SerializeReplay(*replay_->replay());
 
